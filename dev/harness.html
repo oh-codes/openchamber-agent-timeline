@@ -113,6 +113,31 @@
             for (const frame of frames) frame.contentDocument?.querySelector('button[data-mode="time"]')?.click();
           }, 2200);
         }
+        if (params.has('zoom')) {
+          const times = Number(params.get('zoom')) || 2;
+          setTimeout(() => {
+            for (const frame of frames) {
+              const button = frame.contentDocument?.querySelector('[data-zoom="in"]');
+              for (let i = 0; i < Math.min(12, times); i++) button?.click();
+            }
+          }, 2400);
+        }
+        if (params.has('pan')) {
+          setTimeout(() => {
+            for (const frame of frames) {
+              const doc = frame.contentDocument;
+              const track = doc?.querySelector('.track');
+              if (!track) continue;
+              const rect = track.getBoundingClientRect();
+              const y = rect.top + 6;
+              const send = (type, clientX) =>
+                track.dispatchEvent(new PointerEvent(type, { bubbles: true, pointerId: 1, button: 0, buttons: 1, clientX, clientY: y }));
+              send('pointerdown', rect.left + rect.width * 0.75);
+              for (let step = 1; step <= 6; step++) send('pointermove', rect.left + rect.width * (0.75 - step * 0.08));
+              send('pointerup', rect.left + rect.width * 0.27);
+            }
+          }, 2600);
+        }
         if (params.has('click')) {
           setTimeout(() => {
             for (const frame of frames) {

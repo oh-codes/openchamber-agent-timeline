@@ -17,6 +17,11 @@ const STRINGS = {
     reload: 'Reload',
     active: 'active',
     clock: 'clock',
+    zoomIn: 'Zoom in',
+    zoomOut: 'Zoom out',
+    fit: 'Fit the whole timeline',
+    zoomHint: 'Ctrl+wheel zooms, drag pans, double-click a bar zooms to it.',
+    session: 'Session',
     lanes: (n) => `${n} lane${n === 1 ? '' : 's'}`,
     segments: (n) => `${n} segment${n === 1 ? '' : 's'}`,
     truncated: 'Tree cut off at the depth/size limit.',
@@ -36,7 +41,6 @@ const STRINGS = {
     text: 'Text',
     thinking: 'Thinking',
     tool: 'Tool',
-    text: 'Text',
     reasoning: 'Thinking',
     user: 'Prompt',
     legend: { reasoning: 'thinking', tool: 'tool', text: 'text', user: 'prompt' },
@@ -48,6 +52,11 @@ const STRINGS = {
     reload: 'Neu laden',
     active: 'aktiv',
     clock: 'Uhrzeit',
+    zoomIn: 'Vergrößern',
+    zoomOut: 'Verkleinern',
+    fit: 'Ganze Zeitachse zeigen',
+    zoomHint: 'Strg+Mausrad zoomt, Ziehen verschiebt, Doppelklick auf einen Balken zoomt darauf.',
+    session: 'Session',
     lanes: (n) => `${n} Spur${n === 1 ? '' : 'en'}`,
     segments: (n) => `${n} Segment${n === 1 ? '' : 'e'}`,
     truncated: 'Baum an Tiefen-/Größenlimit abgeschnitten.',
@@ -86,6 +95,8 @@ const dom = {
   reload: byId('reload'),
   meta: byId('meta'),
   modes: byId('modes'),
+  zoom: byId('zoom'),
+  zoomFit: byId('zoom')?.querySelector('[data-zoom="fit"]') || null,
   count: byId('count'),
   axis: byId('axis'),
   lanes: byId('lanes'),
@@ -110,7 +121,15 @@ const state = {
   timer: null,
   detailSeq: 0,
   byKey: new Map(),
+  laneInfo: new Map(),
+  /** Visible slice of the timeline in scale fractions (0..1); [0,1] is the whole span. */
+  view: { start: 0, end: 1 },
+  scale: null,
+  /** A pan just moved the view; the click that follows must not open a segment. */
+  panned: false,
 };
+
+const MIN_VIEW = 0.0008;
 
 const t = () => STRINGS[state.lang] || STRINGS.en;
 
@@ -226,6 +245,43 @@ function packRows(segments) {
   return rows;
 }
 
+/* -------------------------------------------------------------- viewport */
+
+/** Clamp a slice of the scale to [0,1] and to a minimum span. */
+function setViewFrac(start, end) {
+  let from = Math.min(Math.max(0, start), 1);
+  let to = Math.min(Math.max(0, end), 1);
+  if (to - from < MIN_VIEW) {
+    const middle = (from + to) / 2;
+    from = Math.min(Math.max(0, middle - MIN_VIEW / 2), 1 - MIN_VIEW);
+    to = from + MIN_VIEW;
+  }
+  state.view = { start: from, end: to };
+}
+
+/** Zoom around a point given as a fraction of the *current* view. */
+function zoomAt(fraction, factor) {
+  const { start, end } = state.view;
+  const span = Math.max(MIN_VIEW, end - start);
+  const anchor = start + fraction * span;
+  const next = Math.min(1, Math.max(MIN_VIEW, span * factor));
+  setViewFrac(anchor - fraction * next, anchor - fraction * next + next);
+}
+
+function zoomToSegment(segment) {
+  if (!state.scale) return;
+  const from = state.scale.map(segment.start);
+  const to = state.scale.map(segment.end);
+  const margin = Math.max((to - from) * 0.1, MIN_VIEW);
+  setViewFrac(from - margin, to + margin);
+}
+
+function resetView() {
+  state.view = { start: 0, end: 1 };
+}
+
+const viewZoom = () => 1 / Math.max(MIN_VIEW, state.view.end - state.view.start);
+
 /* --------------------------------------------------------------- fetching */
 
 async function request(path, query) {
@@ -333,6 +389,7 @@ function setSession(session) {
   state.timeline = null;
   state.error = null;
   state.selected = null;
+  resetView();
   closeDrawer();
   render();
   if (session?.id) load();
@@ -364,9 +421,6 @@ function render() {
   dom.meta.textContent = timeline
     ? [timeline.session?.model || session?.model, narrow ? null : session?.id].filter(Boolean).join(' · ')
     : session?.model || '';
-  dom.count.textContent = timeline
-    ? [strings.lanes(lanes.length), strings.segments(segments.length)].join(' · ')
-    : '';
 
   dom.legend.innerHTML = ['reasoning', 'tool', 'text', 'user']
     .map((kind) => `<span><i class="seg ${kind}" style="position:static;display:inline-block"></i>${esc(strings.legend[kind])}</span>`)
@@ -378,40 +432,80 @@ function render() {
   if (!segments.length) return showNote(strings.noSegments);
 
   const scale = buildScale(timeline.window, segments, state.mode);
-  if (!scale) {
-    dom.lanes.append(note(strings.noSegments));
-    return;
-  }
+  if (!scale) return showNote(strings.noSegments);
+  state.scale = scale;
 
-  const ticks = window.innerWidth < 420 ? [0, 1] : [0, 0.25, 0.5, 0.75, 1];
+  const { start: viewFrom, end: viewTo } = state.view;
+  const viewSpan = Math.max(MIN_VIEW, viewTo - viewFrom);
+  /** Time → percent inside the visible slice; may fall outside 0..100. */
+  const pct = (time) => ((scale.map(time) - viewFrom) / viewSpan) * 100;
+
+  const tickCount = Math.max(2, Math.min(6, Math.floor(trackWidth() / 76)));
+  const ticks = Array.from({ length: tickCount }, (_, index) => index / (tickCount - 1));
   syncChildren(
     dom.axis,
-    ticks.map((tick) => tick.toFixed(2)),
-    () => {
-      const span = document.createElement('span');
-      span.style.left = '';
-      return span;
-    },
+    ticks.map((tick) => tick.toFixed(4)),
+    () => document.createElement('span'),
     (span, key) => {
       const tick = Number(key);
       span.style.left = `${(tick * 100).toFixed(3)}%`;
-      span.textContent = fmtClock(scale.unmap(tick));
+      span.textContent = fmtClock(scale.unmap(viewFrom + tick * viewSpan));
     },
   );
 
-  const cuts = scale.cuts.map((cut) => ({ ...cut, fraction: scale.map(cut.at) }));
-  const byLane = new Map();
+  const cuts = scale.cuts
+    .map((cut) => ({ ...cut, at: pct(cut.at) }))
+    .filter((cut) => cut.at >= -0.5 && cut.at <= 100.5);
+
   state.byKey = new Map();
-  for (const segment of segments) {
-    if (!byLane.has(segment.lane)) byLane.set(segment.lane, []);
-    byLane.get(segment.lane).push(segment);
-    state.byKey.set(segmentKey(segment), segment);
+  state.laneInfo = new Map();
+  const byLane = new Map();
+  for (const lane of lanes) state.laneInfo.set(lane.id, lane);
+
+  /*
+   * One lane per agent level, not per session: two `coder` subagents spawned
+   * from the same parent are the same level and share a lane, with their bars
+   * packed into sub-rows where they overlap. Indentation still comes from depth.
+   */
+  const groups = [];
+  const byGroupKey = new Map();
+  const groupOfLane = new Map();
+  for (const lane of lanes) {
+    const key = `${lane.depth}:${lane.agent || '?'}`;
+    let group = byGroupKey.get(key);
+    if (!group) {
+      group = { key, depth: lane.depth, agent: lane.agent || '?', sessions: [], models: [], segments: [] };
+      byGroupKey.set(key, group);
+      groups.push(group);
+    }
+    group.sessions.push(lane);
+    if (lane.model && !group.models.includes(lane.model)) group.models.push(lane.model);
+    groupOfLane.set(lane.id, group);
   }
 
-  const visible = lanes.filter((lane) => (byLane.get(lane.id) || []).length);
+  for (const segment of segments) {
+    state.byKey.set(segmentKey(segment), segment);
+    const group = groupOfLane.get(segment.lane);
+    if (!group) continue;
+    if (!byLane.has(group.key)) byLane.set(group.key, []);
+    byLane.get(group.key).push(segment);
+  }
+
+  const visible = groups.filter((group) => (byLane.get(group.key) || []).length);
+  if (dom.count) {
+    dom.count.textContent = [
+      strings.lanes(visible.length),
+      narrow ? null : strings.segments(segments.length),
+      viewZoom() > 1.02 ? `${viewZoom().toFixed(1)}×` : null,
+    ].filter(Boolean).join(' · ');
+  }
+  dom.lanes.classList.toggle('zoomed', viewZoom() > 1.02);
+  if (dom.zoomFit) dom.zoomFit.hidden = viewZoom() <= 1.02;
+  if (dom.zoom) dom.zoom.title = strings.zoomHint;
+
   syncChildren(
     dom.lanes,
-    visible.map((lane) => lane.id),
+    visible.map((group) => group.key),
     () => {
       const row = document.createElement('div');
       const label = document.createElement('div');
@@ -425,25 +519,29 @@ function render() {
       return row;
     },
     (row, key) => {
-      const lane = visible.find((candidate) => candidate.id === key);
+      const group = byGroupKey.get(key);
       const laneSegments = byLane.get(key) || [];
       const rows = packRows(laneSegments);
 
-      row.className = lane.depth === 0 ? 'lane root' : 'lane';
-      row.title = `${lane.agent} · ${lane.model || '?'} · ${lane.title}`;
-      row.label.innerHTML = `${lane.depth ? `<span class="depth">${'·'.repeat(Math.min(lane.depth, 4))} </span>` : ''}${esc(lane.agent || '?')}`;
+      row.className = group.depth === 0 ? 'lane root' : 'lane';
+      row.title = [
+        group.agent,
+        group.models.join(', '),
+        group.sessions.length > 1 ? group.sessions.map((lane) => lane.title).join(' · ') : group.sessions[0]?.title,
+      ].filter(Boolean).join(' — ');
+      row.label.innerHTML = `${group.depth ? `<span class="depth">${'·'.repeat(Math.min(group.depth, 4))} </span>` : ''}${esc(group.agent)}${group.sessions.length > 1 ? `<span class="nb">×${group.sessions.length}</span>` : ''}`;
 
       const track = row.track;
       track.style.height = `${rows.length * ROW_H + 2}px`;
 
-      const cutsKey = cuts.map((cut) => cut.fraction.toFixed(4)).join(',');
+      const cutsKey = cuts.map((cut) => cut.at.toFixed(3)).join(',');
       if (row.cutsKey !== cutsKey) {
         row.cutsKey = cutsKey;
         for (const mark of track.querySelectorAll('.cut')) mark.remove();
         for (const cut of cuts) {
           const mark = document.createElement('div');
           mark.className = 'cut';
-          mark.style.left = `${(cut.fraction * 100).toFixed(3)}%`;
+          mark.style.left = `${cut.at.toFixed(3)}%`;
           mark.title = `+${fmtDur(cut.gap)} idle`;
           track.append(mark);
         }
@@ -453,8 +551,13 @@ function render() {
       const geometry = new Map();
       rows.forEach((packed, rowIndex) => {
         for (const segment of packed.items) {
-          order.push(segmentKey(segment));
-          geometry.set(segmentKey(segment), { segment, rowIndex });
+          // A zoomed view holds a fraction of the timeline: drop the bars outside it.
+          const from = pct(segment.start);
+          const to = pct(segment.end);
+          if (to < 0 || from > 100) continue;
+          const key2 = segmentKey(segment);
+          order.push(key2);
+          geometry.set(key2, { segment, rowIndex, left: Math.max(0, from), right: Math.min(100, to) });
         }
       });
 
@@ -465,21 +568,31 @@ function render() {
           const bar = document.createElement('div');
           bar.className = 'seg';
           bar.addEventListener('click', () => {
+            // A pan ends with a click on whatever was under the pointer.
+            if (state.panned) {
+              state.panned = false;
+              return;
+            }
             const segment = state.byKey.get(barKey);
             if (segment) select(segment, bar);
+          });
+          bar.addEventListener('dblclick', (event) => {
+            event.preventDefault();
+            const segment = state.byKey.get(barKey);
+            if (!segment) return;
+            zoomToSegment(segment);
+            render();
           });
           return bar;
         },
         (bar, barKey) => {
-          const { segment, rowIndex } = geometry.get(barKey);
-          const left = scale.map(segment.start);
-          const right = scale.map(segment.end);
+          const { segment, rowIndex, left, right } = geometry.get(barKey);
           // Thinking is the backdrop to the work: a slimmer bar than a tool call.
           const height = segment.kind === 'reasoning' ? Math.max(4, Math.round(BAR_H * 0.6)) : BAR_H;
           const className = `seg ${segment.kind}${segment.status ? ` ${segment.status}` : ''}${state.selected === barKey ? ' sel' : ''}`;
           if (bar.className !== className) bar.className = className;
-          bar.style.left = `${(left * 100).toFixed(3)}%`;
-          bar.style.width = `${Math.max((right - left) * 100, 0.35).toFixed(3)}%`;
+          bar.style.left = `${left.toFixed(3)}%`;
+          bar.style.width = `${Math.max(right - left, 0.12).toFixed(3)}%`;
           bar.style.top = `${rowIndex * ROW_H + 1 + Math.round((BAR_H - height) / 2)}px`;
           bar.style.height = `${height}px`;
           bar.title = `${segment.name} · ${fmtDur(segment.end - segment.start)}${segment.preview ? `\n${segment.preview}` : ''}`;
@@ -514,6 +627,13 @@ function render() {
 }
 
 const segmentKey = (segment) => `${segment.lane}|${segment.messageId}|${segment.index}`;
+
+/** Pixel width of a track: the axis must not put labels closer than they can read. */
+function trackWidth() {
+  const track = dom.lanes.querySelector('.track');
+  if (track && track.clientWidth) return track.clientWidth;
+  return Math.max(140, dom.lanes.clientWidth * 0.6);
+}
 
 /**
  * Reconcile children by `data-key`, reusing the nodes already in `parent`.
@@ -606,6 +726,9 @@ function renderDetail(detail, segment) {
     [strings.time, `${fmtClock(segment.start)} → ${fmtClock(segment.end)}`],
     [strings.duration, fmtDur(segment.end - segment.start)],
   ];
+  // With lanes grouped by agent, the row no longer says which session a bar is from.
+  const lane = state.laneInfo.get(segment.lane);
+  if (lane) facts.splice(1, 0, [strings.session, lane.title]);
   if (part?.status) facts.push([strings.status, part.status]);
   if (message.tokens) {
     const tokens = ['input', 'output', 'reasoning'].filter((key) => typeof message.tokens[key] === 'number').map((key) => `${key} ${message.tokens[key]}`);
@@ -651,8 +774,81 @@ dom.modes.addEventListener('click', (event) => {
   const button = event.target.closest('button[data-mode]');
   if (!button || button.dataset.mode === state.mode) return;
   state.mode = button.dataset.mode;
+  // The two modes map time differently; a window kept across them would lie.
+  resetView();
   render();
 });
+
+dom.zoom?.addEventListener('click', (event) => {
+  const button = event.target.closest('button[data-zoom]');
+  if (!button) return;
+  if (button.dataset.zoom === 'in') zoomAt(0.5, 1 / 1.7);
+  else if (button.dataset.zoom === 'out') zoomAt(0.5, 1.7);
+  else resetView();
+  render();
+});
+
+// Ctrl/Cmd + wheel zooms under the pointer; a plain wheel still scrolls the lanes.
+dom.lanes.addEventListener(
+  'wheel',
+  (event) => {
+    if (!event.ctrlKey && !event.metaKey) return;
+    const track = event.target.closest('.track');
+    if (!track) return;
+    event.preventDefault();
+    const rect = track.getBoundingClientRect();
+    const fraction = clamp01((event.clientX - rect.left) / Math.max(1, rect.width));
+    zoomAt(fraction, event.deltaY > 0 ? 1.22 : 1 / 1.22);
+    render();
+  },
+  { passive: false },
+);
+
+// Drag to pan. The re-render runs once per frame, not once per pointer event.
+let drag = null;
+let panFrame = 0;
+dom.lanes.addEventListener('pointerdown', (event) => {
+  if (event.button !== 0) return;
+  const track = event.target.closest('.track');
+  if (!track) return;
+  drag = {
+    x: event.clientX,
+    width: Math.max(1, track.getBoundingClientRect().width),
+    moved: 0,
+    from: state.view.start,
+    span: Math.max(MIN_VIEW, state.view.end - state.view.start),
+  };
+  // Not every environment grants capture (a synthetic event cannot): the
+  // listeners sit on `.lanes` anyway, so this is a convenience, not a need.
+  try {
+    dom.lanes.setPointerCapture(event.pointerId);
+  } catch {
+    /* no capture: pointermove still arrives through the lanes container */
+  }
+});
+dom.lanes.addEventListener('pointermove', (event) => {
+  if (!drag) return;
+  const dx = event.clientX - drag.x;
+  drag.moved = Math.max(drag.moved, Math.abs(dx));
+  if (drag.moved < 3) return;
+  dom.lanes.classList.add('panning');
+  const shift = -(dx / drag.width) * drag.span;
+  const from = Math.min(Math.max(0, drag.from + shift), 1 - drag.span);
+  state.view = { start: from, end: from + drag.span };
+  if (panFrame) return;
+  panFrame = requestAnimationFrame(() => {
+    panFrame = 0;
+    render();
+  });
+});
+const endDrag = () => {
+  if (!drag) return;
+  state.panned = drag.moved >= 3;
+  drag = null;
+  dom.lanes.classList.remove('panning');
+};
+dom.lanes.addEventListener('pointerup', endDrag);
+dom.lanes.addEventListener('pointercancel', endDrag);
 
 host.onReady((context) => {
   applyHostReady(context, document.documentElement);
@@ -664,6 +860,17 @@ host.onSession((session) => setSession(session));
 
 window.addEventListener('keydown', (event) => {
   if (event.key === 'Escape' && !dom.drawer.hidden) closeDrawer();
+  if (event.target instanceof HTMLInputElement) return;
+  if (event.key === '+' || event.key === '=') {
+    zoomAt(0.5, 1 / 1.7);
+    render();
+  } else if (event.key === '-' || event.key === '_') {
+    zoomAt(0.5, 1.7);
+    render();
+  } else if (event.key === '0') {
+    resetView();
+    render();
+  }
 });
 
 // The axis label count depends on the width: rail vs page surface.

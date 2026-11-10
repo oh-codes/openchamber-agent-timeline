@@ -5,6 +5,12 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Agent timeline</title>
     <style>
+      :root {
+        /* Breathing room against the frame edge: tight in the rail, wider on the page. */
+        --pad: clamp(1.15rem, 2.6vw, 2.5rem);
+        --label-w: 5.2rem;
+        --lane-gap: 0.45rem;
+      }
       html, body {
         margin: 0;
         height: 100%;
@@ -18,7 +24,7 @@
       #root { display: flex; flex-direction: column; height: 100%; min-height: 0; }
 
       /* header */
-      .top { display: flex; align-items: center; gap: 0.4rem; padding: 0.55rem 0.65rem 0.15rem; }
+      .top { display: flex; align-items: center; gap: 0.4rem; padding: 0.6rem var(--pad) 0.15rem; }
       .top .agent {
         font-family: var(--oc-mono, monospace); font-size: 0.78rem; font-weight: 600;
         padding: 0.05rem 0.35rem; border-radius: var(--oc-radius, 6px);
@@ -35,35 +41,46 @@
       }
       .icon:hover { color: var(--oc-fg); border-color: var(--oc-border, #2c2d36); background: var(--oc-hover, rgba(255,255,255,.05)); }
 
-      .meta { padding: 0 0.65rem 0.4rem; color: var(--oc-muted, #9a9aa8); font-family: var(--oc-mono, monospace); font-size: 0.68rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .meta { padding: 0 var(--pad) 0.45rem; color: var(--oc-muted, #9a9aa8); font-family: var(--oc-mono, monospace); font-size: 0.68rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
       /* toolbar */
-      .bar { display: flex; align-items: center; gap: 0.4rem; padding: 0 0.65rem 0.4rem; }
-      .modes { display: inline-flex; border: 1px solid var(--oc-border, #2c2d36); border-radius: var(--oc-radius, 6px); overflow: hidden; }
+      .bar { display: flex; align-items: center; gap: 0.4rem; padding: 0 var(--pad) 0.45rem; }
+      .modes { display: inline-flex; flex: none; border: 1px solid var(--oc-border, #2c2d36); border-radius: var(--oc-radius, 6px); overflow: hidden; }
       .modes button {
         background: transparent; border: 0; color: var(--oc-muted, #9a9aa8); font: inherit; font-size: 0.68rem;
-        padding: 0.15rem 0.45rem; cursor: pointer;
+        padding: 0.15rem 0.45rem; cursor: pointer; line-height: 1.35;
       }
+      .modes button[hidden] { display: none; }
+      .modes button:hover { color: var(--oc-fg); }
       .modes button[aria-pressed="true"] { background: var(--oc-selection, rgba(255,255,255,.08)); color: var(--oc-fg); }
-      .count { margin-left: auto; color: var(--oc-muted, #9a9aa8); font-size: 0.68rem; font-family: var(--oc-mono, monospace); }
+      .zoom button { padding: 0.15rem 0.42rem; }
+      .count { margin-left: auto; color: var(--oc-muted, #9a9aa8); font-size: 0.68rem; font-family: var(--oc-mono, monospace); white-space: nowrap; }
 
-      /* axis */
-      .axis { position: relative; height: 0.85rem; margin: 0 0.65rem; border-bottom: 1px solid color-mix(in srgb, var(--oc-border, #2c2d36) 80%, transparent); flex: none; }
+      /* axis — starts where the tracks start, not at the frame edge */
+      .axis {
+        position: relative; height: 0.85rem; flex: none;
+        margin-left: calc(var(--pad) + var(--label-w) + var(--lane-gap));
+        margin-right: var(--pad);
+        border-bottom: 1px solid color-mix(in srgb, var(--oc-border, #2c2d36) 80%, transparent);
+      }
       .axis span { position: absolute; top: 0; font-size: 0.6rem; color: var(--oc-muted, #9a9aa8); font-family: var(--oc-mono, monospace); transform: translateX(-50%); }
       .axis span:first-child { transform: none; }
       .axis span:last-child { transform: translateX(-100%); }
 
       /* lanes */
       .lanes { flex: 0 1 auto; min-height: 0; overflow-y: auto; overflow-x: hidden; padding: 0.25rem 0 0.5rem; }
-      .lane { display: flex; align-items: center; gap: 0.4rem; padding: 0.1rem 0.65rem; }
+      .lanes.panning, .lanes.panning .track { cursor: grabbing; }
+      .lanes.zoomed .track { cursor: grab; }
+      .lane { display: flex; align-items: center; gap: var(--lane-gap); padding: 0.12rem var(--pad); }
       .lane:hover { background: color-mix(in srgb, var(--oc-hover, rgba(255,255,255,.04)) 60%, transparent); }
       .lane .label {
-        width: 5.2rem; flex: none; font-family: var(--oc-mono, monospace); font-size: 0.64rem; color: var(--oc-muted, #9a9aa8);
+        width: var(--label-w); flex: none; font-family: var(--oc-mono, monospace); font-size: 0.64rem; color: var(--oc-muted, #9a9aa8);
         white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
       }
       .lane.root .label { color: var(--oc-fg); }
       .lane .label .depth { opacity: 0.55; }
-      .track { position: relative; flex: 1; min-width: 0; }
+      .lane .label .nb { opacity: 0.62; margin-left: 0.16rem; font-size: 0.58rem; }
+      .track { position: relative; flex: 1; min-width: 0; touch-action: none; }
 
       .seg {
         position: absolute; border-radius: 2px; cursor: pointer; min-width: 2px;
@@ -81,20 +98,20 @@
       .cut { position: absolute; top: -0.1rem; bottom: -0.1rem; width: 1px; background: repeating-linear-gradient(to bottom, var(--oc-border, #2c2d36) 0 3px, transparent 3px 6px); pointer-events: none; }
 
       /* legend + states */
-      .legend { display: flex; flex-wrap: wrap; gap: 0.55rem; padding: 0.35rem 0.65rem 0.5rem; border-top: 1px solid var(--oc-border, #2c2d36); font-size: 0.64rem; color: var(--oc-muted, #9a9aa8); flex: none; }
+      .legend { display: flex; flex-wrap: wrap; gap: 0.55rem; padding: 0.4rem var(--pad) 0.55rem; border-top: 1px solid var(--oc-border, #2c2d36); font-size: 0.64rem; color: var(--oc-muted, #9a9aa8); flex: none; }
       .legend i { width: 0.42rem; height: 0.42rem; border-radius: 1px; display: inline-block; margin-right: 0.2rem; vertical-align: -0.03rem; }
-      .empty, .note { padding: 0.9rem 0.65rem; color: var(--oc-muted, #9a9aa8); font-size: 0.72rem; }
+      .empty, .note { padding: 0.9rem var(--pad); color: var(--oc-muted, #9a9aa8); font-size: 0.72rem; }
       .note.error { color: var(--oc-error-text, var(--oc-error, #f85149)); }
 
       /* drawer */
       .drawer { margin-top: auto; border-top: 1px solid var(--oc-border, #2c2d36); background: var(--oc-elevated, rgba(255,255,255,.04)); max-height: 52%; display: flex; flex-direction: column; flex: none; }
       .drawer[hidden] { display: none; }
-      .dhead { display: flex; align-items: center; gap: 0.4rem; padding: 0.4rem 0.65rem; font-family: var(--oc-mono, monospace); font-size: 0.68rem; color: var(--oc-muted, #9a9aa8); }
+      .dhead { display: flex; align-items: center; gap: 0.4rem; padding: 0.4rem var(--pad); font-family: var(--oc-mono, monospace); font-size: 0.68rem; color: var(--oc-muted, #9a9aa8); }
       .dhead b { color: var(--oc-fg); font-weight: 600; }
       .dhead .grow { flex: 1; }
       .dhead button { background: none; border: 0; color: var(--oc-muted, #9a9aa8); cursor: pointer; font: inherit; padding: 0 0.2rem; }
       .dhead button:hover { color: var(--oc-fg); }
-      .dbody { overflow: auto; padding: 0 0.65rem 0.6rem; }
+      .dbody { overflow: auto; padding: 0 var(--pad) 0.6rem; }
       .dbody dl { display: grid; grid-template-columns: auto 1fr; gap: 0.1rem 0.5rem; margin: 0 0 0.45rem; font-size: 0.68rem; font-family: var(--oc-mono, monospace); }
       .dbody dt { color: var(--oc-muted, #9a9aa8); }
       .dbody dd { margin: 0; word-break: break-word; }
@@ -119,6 +136,11 @@
         <div class="modes" id="modes">
           <button type="button" data-mode="active">active</button>
           <button type="button" data-mode="time">clock</button>
+        </div>
+        <div class="modes zoom" id="zoom">
+          <button type="button" data-zoom="out" title="Zoom out">−</button>
+          <button type="button" data-zoom="in" title="Zoom in">+</button>
+          <button type="button" data-zoom="fit" hidden title="Back to the whole timeline">fit</button>
         </div>
         <span id="count" class="count"></span>
       </div>

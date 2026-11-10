@@ -17,12 +17,13 @@ Eine Ordner-Installation liest direkt aus diesem Ordner: nach `npm run build` un
 
 | | |
 |---|---|
-| Spur | ein Agent. Unteragenten rücken mit `·`-Präfix ein, die Wurzel steht oben. |
+| Spur | ein Agent-Level. Unteragenten rücken mit `·`-Präfix ein, die Wurzel steht oben. Zwei `coder`-Sessions derselben Ebene teilen sich eine Spur und stehen als `coder ×2` da. |
 | Balken | Denken (dünn, blau), Tool (kräftig, blau / gelb = läuft / rot = Fehler), Text (grün), Prompt (grau, Strich). |
 | Überlappung | Segmente, die zeitlich kollidieren, bekommen automatisch eine Unterzeile in ihrer Spur. |
 | **aktiv** | Pausen über 15 s werden gestaucht, die Arbeit füllt die Breite. |
 | **Uhrzeit** | lineare Zeitachse. |
-| Klick | öffnet unten die Details: Agent, Modell, Tokens, Dauer, Eingabe/Ausgabe. |
+| **Zoom** | `+` / `−` in der Leiste, Strg+Mausrad zoomt unter dem Zeiger, Ziehen verschiebt den Ausschnitt, Doppelklick auf einen Balken zoomt genau darauf. `fit` (oder Taste `0`) zeigt wieder die ganze Zeitleiste. |
+| Klick | öffnet unten die Details: Agent, Session, Modell, Tokens, Dauer, Eingabe/Ausgabe. |
 | `Esc` | schließt die Details. |
 | ↻ | lädt neu, ohne den Dienst-Cache zu benutzen. |
 
