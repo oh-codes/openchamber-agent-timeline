@@ -22,7 +22,7 @@ Eine Ordner-Installation liest direkt aus diesem Ordner: nach `npm run build` un
 | Überlappung | Segmente, die zeitlich kollidieren, bekommen automatisch eine Unterzeile in ihrer Spur. |
 | **aktiv** | Pausen über 15 s werden gestaucht, die Arbeit füllt die Breite. |
 | **Uhrzeit** | lineare Zeitachse. |
-| **Zoom** | `+` / `−` in der Leiste, Strg+Mausrad zoomt unter dem Zeiger, Ziehen verschiebt den Ausschnitt, Doppelklick auf einen Balken zoomt genau darauf. `fit` (oder Taste `0`) zeigt wieder die ganze Zeitleiste. |
+| **Zoom** | `+` / `−` in der Leiste, Strg+Mausrad zoomt unter dem Zeiger, Ziehen verschiebt den Ausschnitt, Doppelklick auf einen Balken zoomt genau darauf. `fit` (oder Taste `0`) zeigt wieder die ganze Zeitleiste. Ein gewählter Ausschnitt bleibt auf seinen Zeitpunkten stehen, auch wenn während des Arbeitens neue Segmente dazukommen. |
 | **Streifen** | unter den Spuren liegt die ganze Session als Dichte-Streifen; das eingerahmte Fenster ist der sichtbare Ausschnitt. Fenster ziehen oder daneben klicken zum Springen. |
 | **Aa** | Textgröße in fünf Stufen (85–150 %), wird gespeichert. |
 | Klick | öffnet unten die Details: Agent, Session, Modell, Tokens, Dauer, Eingabe/Ausgabe. |

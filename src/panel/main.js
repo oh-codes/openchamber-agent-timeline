@@ -134,6 +134,8 @@ const state = {
   laneInfo: new Map(),
   /** Visible slice of the timeline in scale fractions (0..1); [0,1] is the whole span. */
   view: { start: 0, end: 1 },
+  /** The same slice in wall-clock ms, so a growing span cannot move it. */
+  anchor: null,
   scale: null,
   /** Text scale on top of the host's root size (which carries no size setting). */
   fontScale: 1,
@@ -270,6 +272,27 @@ function setViewFrac(start, end) {
     to = from + MIN_VIEW;
   }
   state.view = { start: from, end: to };
+  anchorView();
+}
+
+/**
+ * Pin the visible slice to the times behind it.
+ *
+ * The view is stored as a fraction of the total span, and the span grows while
+ * the chat works. Without this anchor the same fraction covered different
+ * times after every poll, so a section the user picked drifted away.
+ */
+function anchorView() {
+  if (!state.scale) return;
+  // The whole span is not a place: following the data is what it means.
+  if (state.view.end - state.view.start > 0.999) {
+    state.anchor = null;
+    return;
+  }
+  state.anchor = {
+    from: state.scale.unmap(state.view.start),
+    to: state.scale.unmap(state.view.end),
+  };
 }
 
 /** Zoom around a point given as a fraction of the *current* view. */
@@ -291,6 +314,8 @@ function zoomToSegment(segment) {
 
 function resetView() {
   state.view = { start: 0, end: 1 };
+  // Back to the whole span: follow the data again instead of staying pinned.
+  state.anchor = null;
 }
 
 const viewZoom = () => 1 / Math.max(MIN_VIEW, state.view.end - state.view.start);
@@ -502,6 +527,12 @@ function render() {
   const scale = buildScale(timeline.window, segments, state.mode);
   if (!scale) return showNote(strings.noSegments);
   state.scale = scale;
+
+  // A pinned slice is re-derived from its times: the span it was a fraction of
+  // has probably grown since the last poll.
+  if (state.anchor) {
+    state.view = { start: scale.map(state.anchor.from), end: scale.map(state.anchor.to) };
+  }
 
   const { start: viewFrom, end: viewTo } = state.view;
   const viewSpan = Math.max(MIN_VIEW, viewTo - viewFrom);
@@ -901,6 +932,7 @@ function onPanMove(event) {
   const shift = -(dx / drag.width) * drag.span;
   const from = Math.min(Math.max(0, drag.from + shift), 1 - drag.span);
   state.view = { start: from, end: from + drag.span };
+  anchorView();
   if (panFrame) return;
   panFrame = requestAnimationFrame(() => {
     panFrame = 0;
@@ -950,6 +982,7 @@ function onMapMove(event) {
   const fraction = mapFraction(event.clientX);
   const from = Math.min(Math.max(0, fraction - mapDrag.grab), 1 - mapDrag.span);
   state.view = { start: from, end: from + mapDrag.span };
+  anchorView();
   if (mapFrame) return;
   mapFrame = requestAnimationFrame(() => {
     mapFrame = 0;
@@ -974,6 +1007,7 @@ dom.map?.addEventListener('pointerdown', (event) => {
     // Click beside the window: centre it there instead of nudging.
     const from = Math.min(Math.max(0, fraction - span / 2), 1 - span);
     state.view = { start: from, end: from + span };
+    anchorView();
     render();
   }
   mapDrag = { grab: fraction - state.view.start, span };

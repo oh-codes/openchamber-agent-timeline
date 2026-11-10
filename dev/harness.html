@@ -173,6 +173,16 @@
             return true;
           });
         }
+        if (params.has('reset')) {
+          waitForBars((frame) => {
+            const doc = frame.contentDocument;
+            if (!doc?.querySelector('.seg')) return false;
+            const button = doc.querySelector('[data-zoom="fit"]');
+            if (!button || button.hidden) return false;
+            button.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+            return true;
+          });
+        }
         if (params.has('font')) {
           const times = Math.min(5, Number(params.get('font')) || 1);
           waitForBars((frame) => {
