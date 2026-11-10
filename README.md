@@ -1,80 +1,96 @@
 # Agent timeline
 
-OpenChamber-Erweiterung: eine Schwimmbahn-Zeitleiste für den **gerade offenen Chat**.
-Eine Spur pro Agent-Ebene, ein Balken pro Denk-, Tool- und Text-Segment, Klick öffnet die Details.
+A swimlane timeline of the chat you have open in [OpenChamber](https://github.com/openchamber/openchamber): one lane per agent level, one bar per thinking / tool / text segment, click a bar for the details.
 
-![Rail und Vollbild](docs/preview.png)
+![Rail and full page](docs/preview.png)
 
-## Installieren
+Subagents get their own lane under the root, so a run that fans out to `coder`, `auditor` and back is visible as a tree instead of a wall of text.
 
-1. In OpenChamber: **Settings → Extensions → Install** und dort **den Ordner** `E:\Coding\Openchamber_team` wählen.
-2. Die Erweiterung fragt zwei Fähigkeiten an: `service` (eigener Hintergrunddienst) und `opencode` (Lesezugriff auf Sessions). Beide freigeben.
-3. Das Icon **Agent timeline** in der rechten Leiste öffnen. Über das Seitenleisten-Menü („Extension pages") öffnet sich dieselbe Ansicht als Vollbildseite.
-
-Eine Ordner-Installation liest direkt aus diesem Ordner: nach `npm run build` und einem Reload im Panel ist jede Änderung live.
-
-## Bedienen
+## What it shows
 
 | | |
 |---|---|
-| Spur | ein Agent-Level, sein Name steht **über** der Spur, die Balken nutzen die volle Breite. Unteragenten rücken mit `·`-Präfix ein, die Wurzel steht oben. Zwei `coder`-Sessions derselben Ebene teilen sich eine Spur und stehen als `coder ×2` da. |
-| Balken | Denken (dünn, blau), Tool (kräftig, blau / gelb = läuft / rot = Fehler), Text (grün), Prompt (grau, Strich). |
-| **Warten** | schraffiert statt gefüllt: `subagent` wartet auf einen Unteragenten, `question` auf deine Antwort. Im Tooltip und im Detail steht, auf wen. |
-| Überlappung | Segmente, die zeitlich kollidieren, bekommen automatisch eine Unterzeile in ihrer Spur. |
-| **aktiv** | Pausen über 15 s werden gestaucht, die Arbeit füllt die Breite. |
-| **Uhrzeit** | lineare Zeitachse. |
-| **Zoom** | `+` / `−` in der Leiste, Strg+Mausrad zoomt unter dem Zeiger, Ziehen verschiebt den Ausschnitt, Doppelklick auf einen Balken zoomt genau darauf. `fit` (oder Taste `0`) zeigt wieder die ganze Zeitleiste. Ein gewählter Ausschnitt bleibt auf seinen Zeitpunkten stehen, auch wenn während des Arbeitens neue Segmente dazukommen. |
-| **Streifen** | unter den Spuren liegt die ganze Session als Dichte-Streifen; das eingerahmte Fenster ist der sichtbare Ausschnitt. Fenster ziehen oder daneben klicken zum Springen. |
-| **Aa** | Textgröße in fünf Stufen (85–150 %), wird gespeichert. |
-| Klick | öffnet unten die Details: Agent, Session, Modell, Tokens, Dauer, Eingabe/Ausgabe. |
-| `Esc` | schließt die Details. |
-| ↻ | lädt neu, ohne den Dienst-Cache zu benutzen. |
+| **Lane** | one agent level. The name sits above its track; subagents are indented with `·`, the root is bold. Two sessions of the same agent at the same level share a lane and show as `coder ×2`. |
+| **Bar** | thinking (thin, blue), tool (solid, blue / yellow while running / red on error), text (green), prompt (grey). |
+| **Waiting** | hatched, not filled: a `subagent` call waiting for a child, a `question` waiting for you. The tooltip and the drawer name the child agent or repeat the question. |
+| **Overlap** | segments that collide get a sub-row inside their lane instead of covering each other. |
+| **active** | idle stretches longer than 15 s are compressed, so the work fills the width. |
+| **clock** | linear time axis. |
+| **Zoom** | `+` / `−`, Ctrl+wheel zooms under the pointer, drag pans, double-click a bar zooms onto it, `fit` (or `0`) shows everything again. |
+| **Overview strip** | the whole session as a density map; the framed window is the visible slice. Drag it, or click beside it to jump. |
+| **Aa** | text size in five steps (85–150 %), remembered per extension. |
+| **Click** | opens the details: agent, session, model, tokens, duration, input/output. `Esc` closes. |
+| **↻** | reloads without using the service cache. |
 
-Während irgendeine Spur arbeitet, fragt das Panel alle 1,5 s nach; im Ruhezustand passiert nichts.
-Das gilt auch, wenn nur ein Unteragent im Hintergrund weiterläuft, während der Chat selbst schon still ist.
+A picked slice stays on its own timestamps even while new segments arrive. A slice that touches the newest end keeps following it.
 
-## Wie die Zeiten entstehen
+The panel polls every 1.5 s while **any** lane is working — including a subagent that keeps running after the parent turn ended. When everything is idle it stops asking.
 
-`reasoning`- und `tool`-Teile bringen `time.created`, `time.ran`, `time.completed` mit — daraus wird exakt gezeichnet.
-Zwei Sonderfälle löst der Dienst (`service/main.js`):
+## Install
 
-- **`text`-Teile haben gar keine Zeit.** Sie erben das Fenster zwischen dem Ende des vorherigen Teils und dem Moment, in dem die Nachricht fertig gestreamt war (`time.streamed`). Nie das Ende eines späteren Tools — sonst würde ein blockierendes Tool den Text über Minuten ziehen.
-- **Laufende Tools** bekommen `jetzt` als Ende, der Balken wächst also mit.
+**From this repository** — OpenChamber → Settings → Extensions → Install → paste the repository URL. The built panel and service are committed, because the host never compiles TypeScript for you.
 
-## Grenzen
+**From a folder** — same dialog, choose the folder. A folder install reads the files live, so `npm run build` plus a panel reload is enough after a change.
 
-- Je Spur werden die letzten **120 Nachrichten** geladen (OpenCode erlaubt maximal 200 pro Anfrage). Ältere Turns fehlen; das Panel sagt es unten.
-- Maximal **24 Spuren**, **4 Ebenen** tief.
-- Der Dienst darf nur lesen: Sessions, Nachrichten, Projekte, Events. Alles andere beantwortet der Host mit `403 NOT_A_LISTED_READ`.
+Then:
 
-### Schriftgröße
+1. Grant the two capabilities it asks for: `service` (its own background process) and `opencode` (read-only access to sessions).
+2. Open the **Agent timeline** icon in the right rail. The same view is available as a full-width page from the rail's menu.
 
-Der Host übergibt Erweiterungen nur die Schrift*familie* (`--oc-font`), keine Größe: `applyHostTheme` im SDK setzt die Wurzel fest auf `0.875rem`, und die Einstellung „Interface-Größe" der App erreicht das iframe nicht (es ist sandboxed). Deshalb rechnet das Panel alles in `em` über dieser Wurzel und bringt mit **Aa** einen eigenen Faktor mit, der über `host.storage` gespeichert wird.
+Requires OpenChamber 2.5.0 or newer (`apiVersion: 1`).
 
-## Entwicklung
+## How the timings are derived
+
+`reasoning` and `tool` parts carry `time.created`, `time.ran` and `time.completed`, so those bars are exact. Two cases need work, both in `service/main.js`:
+
+- **`text` parts carry no time at all.** They take the span from the previous part's end to the moment the message finished streaming (`time.streamed`) — never to the end of a later tool, which would stretch text over a blocking question.
+- **Running tools** end at "now", so the bar grows while the tool runs.
+- **Waiting calls** (`subagent`, `question`) are marked as such rather than drawn as work.
+
+## Limits
+
+- The newest **120 messages per lane** are loaded; OpenCode rejects a `limit` above 200. Older turns are missing and the panel says so.
+- At most **24 lanes**, **4 levels** deep.
+- The service is read-only: sessions, messages, projects, events. Anything else is refused by the host with `403 NOT_A_LISTED_READ`.
+
+### Text size
+
+The host sends guests the font *family* but no size: `applyHostTheme` in the SDK pins the guest root to `0.875rem`, and the app's interface-size setting cannot reach a sandboxed iframe. The panel therefore sizes everything in `em` over that root and ships its own **Aa** factor. `theme.tokens.fontSize` is read when a host ever provides it ([openchamber#6758](https://github.com/openchamber/openchamber/issues/6758)).
+
+## Development
 
 ```bash
 npm install
-npm run build     # src/panel -> panel/ (esbuild, IIFE), HTML kopiert
-npm run dev       # Harness im Browser, ohne OpenChamber-Neuinstallation
+npm run build     # src/panel -> panel/ (esbuild, IIFE); index.html copied
+npm run dev       # harness in a browser, no reinstall in OpenChamber
 ```
 
-`npm run dev` startet den echten Dienst gegen dein lokales OpenCode und malt das Panel in einem einfachen iframe-Harness (`http://127.0.0.1:45997/`). Nützliche Parameter:
+`npm run dev` starts the real service against your local OpenCode and draws the panel in a plain iframe harness at <http://127.0.0.1:45997/>. Useful parameters:
 
-- `?session=<id>` — bestimmte Session (ohne: die zuletzt geöffnete)
-- `?clock` — startet im Uhrzeit-Modus
-- `?click` — öffnet einen Detail-Drawer
+- `?session=<id>` — a specific session (default: the most recently viewed one)
+- `?clock` — start in clock mode
+- `?click` — open a detail drawer
+- `?zoom=3` — zoom in three steps
+- `?font=2` — step the text size
 
-Der Harness braucht `~/.config/opencode/service.json` (schreibt OpenChamber beim ersten Start) und ein laufendes OpenCode auf `127.0.0.1:28894` (`OPENCODE_PORT` überschreibt).
+The harness needs `~/.config/opencode/service.json` (OpenChamber writes it on first start) and a running OpenCode on `127.0.0.1:28894` (override with `OPENCODE_PORT`).
 
-## Struktur
+## Structure
 
 ```
-package.json          Manifest (openchamber.contributes) + Skripte
+package.json          manifest (openchamber.contributes) + scripts
 icon.svg
-src/panel/            Quelle des Panels (index.html, main.js) — nur hier editieren
-panel/                Build-Ergebnis, wird installiert (nicht im Git)
-service/main.js       Dienst: baut Spuren+Segmente, /health /timeline /detail
+src/panel/            panel sources (index.html, main.js) — edit only here
+panel/                build output; committed, this is what the host loads
+service/main.js       service: lanes + segments, /health /timeline /detail
 scripts/build.mjs     esbuild
-dev/                  Harness + Dev-Server, nicht Teil des Pakets
+dev/                  harness and dev server, not part of the package
 ```
+
+CI rebuilds the panel and fails if the committed output differs from the sources.
+
+## License
+
+MIT — see [LICENSE](LICENSE).
+
+Not affiliated with the OpenChamber project. It talks to OpenChamber through the public guest API and to OpenCode through the host's loopback link.

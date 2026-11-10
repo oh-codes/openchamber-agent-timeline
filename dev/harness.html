@@ -59,7 +59,7 @@
         const context = {
           theme: hostSize ? { ...theme, tokens: { ...theme.tokens, fontSize: `${hostSize}px` } } : theme,
           locale: 'de',
-          directory: session?.directory || 'E:\\Coding\\Openchamber_team',
+          directory: session?.directory || '',
           session: {
             id: sessionId,
             title: session?.title || sessionId,

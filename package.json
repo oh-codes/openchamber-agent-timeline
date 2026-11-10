@@ -4,7 +4,27 @@
   "private": true,
   "type": "module",
   "license": "MIT",
-  "description": "Swimlane timeline of the open chat: one lane per agent level, segments for reasoning and tool calls.",
+  "description": "Swimlane timeline of the open chat in OpenChamber: one lane per agent level, one bar per thinking, tool and text segment.",
+  "author": "Olivi",
+  "keywords": [
+    "openchamber",
+    "openchamber-extension",
+    "timeline",
+    "swimlane",
+    "observability",
+    "ai-agents"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/oh-codes/openchamber-agent-timeline.git"
+  },
+  "homepage": "https://github.com/oh-codes/openchamber-agent-timeline#readme",
+  "bugs": {
+    "url": "https://github.com/oh-codes/openchamber-agent-timeline/issues"
+  },
+  "engines": {
+    "node": ">=20"
+  },
   "openchamber": {
     "apiVersion": 1,
     "engines": {
@@ -27,7 +47,8 @@
   },
   "scripts": {
     "build": "node scripts/build.mjs",
-    "dev": "node scripts/build.mjs && node dev/serve.mjs"
+    "dev": "node scripts/build.mjs && node dev/serve.mjs",
+    "check": "node scripts/build.mjs && git diff --exit-code -- panel && node --check service/main.js"
   },
   "devDependencies": {
     "@openchamber/sdk": "^2.7.0",

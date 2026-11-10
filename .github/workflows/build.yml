@@ -1,0 +1,33 @@
+name: build
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      # The host runs service/main.js as it sits, and refuses .ts with missing-build.
+      - name: Service parses
+        run: node --check service/main.js
+
+      - name: Build the panel
+        run: npm run build
+
+      # An install from this repository loads panel/ exactly as committed.
+      - name: Committed build is current
+        run: git diff --exit-code -- panel

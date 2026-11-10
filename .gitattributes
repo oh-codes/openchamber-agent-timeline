@@ -1,0 +1,8 @@
+* text=auto eol=lf
+
+*.png binary
+*.svg text
+
+# The host loads panel/ exactly as committed. It stays tracked (an install from
+# a repository fails without it) but is marked generated for GitHub.
+panel/** linguist-generated=true

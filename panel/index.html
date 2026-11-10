@@ -1,0 +1,197 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Agent timeline</title>
+    <style>
+      :root {
+        /* Breathing room against the frame edge: tight in the rail, wider on the page. */
+        --pad: clamp(1.15rem, 2.6vw, 2.5rem);
+        --lane-gap: 0.45rem;
+        /* Text scale: the host sets the root to 0.875rem and passes no interface
+           size, so the panel carries its own factor on top of that root. */
+        --fs-scale: 1;
+      }
+      html, body {
+        margin: 0;
+        height: 100%;
+        background: var(--oc-bg, #14151a);
+        color: var(--oc-fg, #e8e8ee);
+        overflow: hidden;
+      }
+      /* Everything below is em: one factor scales the whole panel, and the base
+         is the host's root (or its size token, once the host sends one). */
+      body { font-family: var(--oc-font, system-ui, sans-serif); font-size: calc(var(--host-font-size, 1rem) * var(--fs-scale)); line-height: 1.4; }
+      * { box-sizing: border-box; }
+
+      #root { display: flex; flex-direction: column; height: 100%; min-height: 0; }
+
+      /* header */
+      .top { display: flex; align-items: center; gap: 0.4em; padding: 0.6em var(--pad) 0.15em; }
+      .top .agent {
+        font-family: var(--oc-mono, monospace); font-size: 0.94em; font-weight: 600;
+        padding: 0.05em 0.35em; border-radius: var(--oc-radius, 6px);
+        background: color-mix(in srgb, var(--oc-primary, #6c8cff) 16%, transparent);
+        color: var(--oc-primary-text, var(--oc-primary, #6c8cff));
+        white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 45%;
+      }
+      .top .title { color: var(--oc-muted, #9a9aa8); font-size: 0.94em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 1; min-width: 0; }
+      .dot { width: 0.45em; height: 0.45em; border-radius: 50%; flex: none; background: var(--oc-muted, #9a9aa8); }
+      .dot.working { background: var(--oc-success, #3fb950); box-shadow: 0 0 0.35em color-mix(in srgb, var(--oc-success, #3fb950) 70%, transparent); }
+      .icon {
+        flex: none; background: transparent; border: 1px solid transparent; color: var(--oc-muted, #9a9aa8);
+        border-radius: var(--oc-radius, 6px); font: inherit; font-size: 0.82em; line-height: 1; padding: 0.25em 0.4em; cursor: pointer;
+      }
+      .icon:hover { color: var(--oc-fg); border-color: var(--oc-border, #2c2d36); background: var(--oc-hover, rgba(255,255,255,.05)); }
+
+      .meta { padding: 0 var(--pad) 0.45em; color: var(--oc-muted, #9a9aa8); font-family: var(--oc-mono, monospace); font-size: 0.82em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+      /* toolbar */
+      .bar { display: flex; align-items: center; gap: 0.4em; padding: 0 var(--pad) 0.45em; }
+      .modes { display: inline-flex; flex: none; border: 1px solid var(--oc-border, #2c2d36); border-radius: var(--oc-radius, 6px); overflow: hidden; }
+      .modes button {
+        background: transparent; border: 0; color: var(--oc-muted, #9a9aa8); font: inherit; font-size: 0.8em;
+        padding: 0.15em 0.45em; cursor: pointer; line-height: 1.35;
+      }
+      .modes button[hidden] { display: none; }
+      .modes button:hover { color: var(--oc-fg); }
+      .modes button[aria-pressed="true"] { background: var(--oc-selection, rgba(255,255,255,.08)); color: var(--oc-fg); }
+      .zoom button { padding: 0.15em 0.42em; }
+      .count { margin-left: auto; color: var(--oc-muted, #9a9aa8); font-size: 0.8em; font-family: var(--oc-mono, monospace); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+      /* axis — full width now that lanes carry their name on top */
+      .axis {
+        position: relative; height: 0.9em; flex: none;
+        margin: 0 var(--pad);
+        border-bottom: 1px solid color-mix(in srgb, var(--oc-border, #2c2d36) 80%, transparent);
+      }
+      .axis span { position: absolute; top: 0; font-size: 0.76em; color: var(--oc-muted, #9a9aa8); font-family: var(--oc-mono, monospace); transform: translateX(-50%); }
+      .axis span:first-child { transform: none; }
+      .axis span:last-child { transform: translateX(-100%); }
+
+      /* lanes: the name sits above its track, so the bars get the full width */
+      .lanes { flex: 0 1 auto; min-height: 0; overflow-y: auto; overflow-x: hidden; padding: 0.3em 0 0.5em; }
+      .lanes.panning, .lanes.panning .track { cursor: grabbing; }
+      .lanes.zoomed .track { cursor: grab; }
+      .lane { display: block; padding: 0.3em var(--pad) 0.15em; }
+      .lane:hover { background: color-mix(in srgb, var(--oc-hover, rgba(255,255,255,.04)) 60%, transparent); }
+      .lane .name {
+        font-family: var(--oc-mono, monospace); font-size: 0.8em; color: var(--oc-muted, #9a9aa8);
+        margin: 0 0 0.2em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+      }
+      .lane.root .name { color: var(--oc-fg); font-weight: 600; }
+      .lane .name .depth { opacity: 0.55; }
+      .lane .name .nb { opacity: 0.62; margin-left: 0.16em; font-size: 0.9em; }
+      .track { position: relative; width: 100%; touch-action: none; }
+
+      .seg {
+        position: absolute; border-radius: 2px; cursor: pointer; min-width: 2px;
+        transition: filter 90ms linear;
+      }
+      .seg:hover { filter: brightness(1.4); }
+      .seg.sel { outline: 1px solid var(--oc-fg); outline-offset: 1px; }
+      .seg.reasoning { background: color-mix(in srgb, var(--oc-info, #58a6ff) 55%, transparent); }
+      .seg.tool { background: color-mix(in srgb, var(--oc-primary, #6c8cff) 78%, transparent); }
+      .seg.tool.error { background: var(--oc-error, #f85149); }
+      .seg.tool.running { background: var(--oc-warning, #d29922); }
+      /* Waiting is not work: a hatched outline instead of a filled bar. */
+      .seg.tool.waiting {
+        background: repeating-linear-gradient(
+          45deg,
+          color-mix(in srgb, var(--oc-muted, #9a9aa8) 32%, transparent) 0 2px,
+          transparent 2px 7px
+        );
+        box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--oc-muted, #9a9aa8) 38%, transparent);
+      }
+      .seg.tool.waiting.error { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--oc-error, #f85149) 70%, transparent); }
+      .seg.text { background: color-mix(in srgb, var(--oc-success, #3fb950) 62%, transparent); }
+      .seg.user { background: color-mix(in srgb, var(--oc-muted, #9a9aa8) 70%, transparent); }
+
+      .cut { position: absolute; top: -0.1em; bottom: -0.1em; width: 1px; background: repeating-linear-gradient(to bottom, var(--oc-border, #2c2d36) 0 3px, transparent 3px 6px); pointer-events: none; }
+
+      /* overview map: the whole timeline as a strip, the visible slice as a window */
+      .map {
+        position: relative; flex: none; height: 1.6em; margin: 0.35em var(--pad) 0;
+        cursor: crosshair;
+      }
+      .map[hidden] { display: none; }
+      .map canvas { width: 100%; height: 100%; display: block; border-radius: 2px; background: color-mix(in srgb, var(--oc-muted-surface, rgba(0,0,0,.25)) 70%, transparent); }
+      .map .win {
+        position: absolute; top: 0; bottom: 0; border-radius: 2px;
+        border: 1px solid color-mix(in srgb, var(--oc-fg, #fff) 42%, transparent);
+        background: color-mix(in srgb, var(--oc-fg, #fff) 10%, transparent);
+        cursor: grab;
+      }
+      .map .win[hidden] { display: none; }
+      .map .win.live { border-right-color: color-mix(in srgb, var(--oc-success, #3fb950) 85%, transparent); }
+      .map.dragging .win { cursor: grabbing; }
+
+      /* legend + states */
+      .legend { display: flex; flex-wrap: wrap; gap: 0.55em; padding: 0.4em var(--pad) 0.55em; border-top: 1px solid var(--oc-border, #2c2d36); font-size: 0.78em; color: var(--oc-muted, #9a9aa8); flex: none; }
+      .legend i { width: 0.45em; height: 0.45em; border-radius: 1px; display: inline-block; margin-right: 0.2em; vertical-align: -0.03em; }
+      .empty, .note { padding: 0.9em var(--pad); color: var(--oc-muted, #9a9aa8); font-size: 0.86em; }
+      .note.error { color: var(--oc-error-text, var(--oc-error, #f85149)); }
+
+      /* drawer */
+      .drawer { margin-top: auto; border-top: 1px solid var(--oc-border, #2c2d36); background: var(--oc-elevated, rgba(255,255,255,.04)); max-height: 52%; display: flex; flex-direction: column; flex: none; }
+      .drawer[hidden] { display: none; }
+      .dhead { display: flex; align-items: center; gap: 0.4em; padding: 0.4em var(--pad); font-family: var(--oc-mono, monospace); font-size: 0.82em; color: var(--oc-muted, #9a9aa8); }
+      .dhead b { color: var(--oc-fg); font-weight: 600; }
+      .dhead .grow { flex: 1; }
+      .dhead button { background: none; border: 0; color: var(--oc-muted, #9a9aa8); cursor: pointer; font: inherit; padding: 0 0.2em; }
+      .dhead button:hover { color: var(--oc-fg); }
+      .dbody { overflow: auto; padding: 0 var(--pad) 0.6em; }
+      .dbody dl { display: grid; grid-template-columns: auto 1fr; gap: 0.1em 0.5em; margin: 0 0 0.45em; font-size: 0.82em; font-family: var(--oc-mono, monospace); }
+      .dbody dt { color: var(--oc-muted, #9a9aa8); }
+      .dbody dd { margin: 0; word-break: break-word; }
+      .dbody pre {
+        margin: 0 0 0.45em; padding: 0.4em 0.5em; background: var(--oc-muted-surface, rgba(0,0,0,.22));
+        border-radius: var(--oc-radius, 6px); font-family: var(--oc-mono, monospace); font-size: 0.82em;
+        white-space: pre-wrap; word-break: break-word; max-height: 14em; overflow: auto;
+      }
+      .dbody .cap { font-size: 0.75em; text-transform: uppercase; letter-spacing: 0.04em; color: var(--oc-muted, #9a9aa8); margin: 0 0 0.2em; }
+    </style>
+  </head>
+  <body>
+    <div id="root">
+      <header class="top">
+        <span id="status" class="dot"></span>
+        <span id="agent" class="agent">—</span>
+        <span id="title" class="title"></span>
+        <button id="font" class="icon" type="button" title="Text size">Aa</button>
+        <button id="reload" class="icon" type="button" title="Reload">↻</button>
+      </header>
+      <div id="meta" class="meta"></div>
+      <div class="bar">
+        <div class="modes" id="modes">
+          <button type="button" data-mode="active">active</button>
+          <button type="button" data-mode="time">clock</button>
+        </div>
+        <div class="modes zoom" id="zoom">
+          <button type="button" data-zoom="out" title="Zoom out">−</button>
+          <button type="button" data-zoom="in" title="Zoom in">+</button>
+          <button type="button" data-zoom="fit" hidden title="Back to the whole timeline">fit</button>
+        </div>
+        <span id="count" class="count"></span>
+      </div>
+      <div id="axis" class="axis"></div>
+      <div id="lanes" class="lanes"></div>
+      <div id="map" class="map" hidden>
+        <canvas id="map-canvas"></canvas>
+        <div id="map-win" class="win"></div>
+      </div>
+      <footer id="legend" class="legend"></footer>
+      <div id="drawer" class="drawer" hidden>
+        <div class="dhead">
+          <b id="d-kind"></b>
+          <span id="d-what"></span>
+          <span class="grow"></span>
+          <button id="d-close" type="button" title="Close">✕</button>
+        </div>
+        <div id="d-body" class="dbody"></div>
+      </div>
+    </div>
+    <script src="./main.js"></script>
+  </body>
+</html>
