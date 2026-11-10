@@ -651,12 +651,12 @@ function render() {
     visible.map((group) => group.key),
     () => {
       const row = document.createElement('div');
-      const label = document.createElement('div');
-      label.className = 'label';
+      const name = document.createElement('div');
+      name.className = 'name';
       const track = document.createElement('div');
       track.className = 'track';
-      row.append(label, track);
-      row.label = label;
+      row.append(name, track);
+      row.name = name;
       row.track = track;
       row.cutsKey = '';
       return row;
@@ -672,7 +672,7 @@ function render() {
         group.models.join(', '),
         group.sessions.length > 1 ? group.sessions.map((lane) => lane.title).join(' · ') : group.sessions[0]?.title,
       ].filter(Boolean).join(' — ');
-      row.label.innerHTML = `${group.depth ? `<span class="depth">${'·'.repeat(Math.min(group.depth, 4))} </span>` : ''}${esc(group.agent)}${group.sessions.length > 1 ? `<span class="nb">×${group.sessions.length}</span>` : ''}`;
+      row.name.innerHTML = `${group.depth ? `<span class="depth">${'·'.repeat(Math.min(group.depth, 4))} </span>` : ''}${esc(group.agent)}${group.sessions.length > 1 ? `<span class="nb">×${group.sessions.length}</span>` : ''}`;
 
       const track = row.track;
       track.style.height = `${rows.length * rowHeight + 2}px`;

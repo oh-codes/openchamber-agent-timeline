@@ -8,7 +8,6 @@
       :root {
         /* Breathing room against the frame edge: tight in the rail, wider on the page. */
         --pad: clamp(1.15rem, 2.6vw, 2.5rem);
-        --label-w: 5.2rem;
         --lane-gap: 0.45rem;
         /* Text scale: the host sets the root to 0.875rem and passes no interface
            size, so the panel carries its own factor on top of that root. */
@@ -61,31 +60,30 @@
       .zoom button { padding: 0.15em 0.42em; }
       .count { margin-left: auto; color: var(--oc-muted, #9a9aa8); font-size: 0.8em; font-family: var(--oc-mono, monospace); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
-      /* axis — starts where the tracks start, not at the frame edge */
+      /* axis — full width now that lanes carry their name on top */
       .axis {
         position: relative; height: 0.9em; flex: none;
-        margin-left: calc(var(--pad) + var(--label-w) + var(--lane-gap));
-        margin-right: var(--pad);
+        margin: 0 var(--pad);
         border-bottom: 1px solid color-mix(in srgb, var(--oc-border, #2c2d36) 80%, transparent);
       }
       .axis span { position: absolute; top: 0; font-size: 0.76em; color: var(--oc-muted, #9a9aa8); font-family: var(--oc-mono, monospace); transform: translateX(-50%); }
       .axis span:first-child { transform: none; }
       .axis span:last-child { transform: translateX(-100%); }
 
-      /* lanes */
-      .lanes { flex: 0 1 auto; min-height: 0; overflow-y: auto; overflow-x: hidden; padding: 0.25em 0 0.5em; }
+      /* lanes: the name sits above its track, so the bars get the full width */
+      .lanes { flex: 0 1 auto; min-height: 0; overflow-y: auto; overflow-x: hidden; padding: 0.3em 0 0.5em; }
       .lanes.panning, .lanes.panning .track { cursor: grabbing; }
       .lanes.zoomed .track { cursor: grab; }
-      .lane { display: flex; align-items: center; gap: var(--lane-gap); padding: 0.12em var(--pad); }
+      .lane { display: block; padding: 0.3em var(--pad) 0.15em; }
       .lane:hover { background: color-mix(in srgb, var(--oc-hover, rgba(255,255,255,.04)) 60%, transparent); }
-      .lane .label {
-        width: var(--label-w); flex: none; font-family: var(--oc-mono, monospace); font-size: 0.8em; color: var(--oc-muted, #9a9aa8);
-        white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+      .lane .name {
+        font-family: var(--oc-mono, monospace); font-size: 0.8em; color: var(--oc-muted, #9a9aa8);
+        margin: 0 0 0.2em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
       }
-      .lane.root .label { color: var(--oc-fg); }
-      .lane .label .depth { opacity: 0.55; }
-      .lane .label .nb { opacity: 0.62; margin-left: 0.16em; font-size: 0.9em; }
-      .track { position: relative; flex: 1; min-width: 0; touch-action: none; }
+      .lane.root .name { color: var(--oc-fg); font-weight: 600; }
+      .lane .name .depth { opacity: 0.55; }
+      .lane .name .nb { opacity: 0.62; margin-left: 0.16em; font-size: 0.9em; }
+      .track { position: relative; width: 100%; touch-action: none; }
 
       .seg {
         position: absolute; border-radius: 2px; cursor: pointer; min-width: 2px;
@@ -105,7 +103,6 @@
       /* overview map: the whole timeline as a strip, the visible slice as a window */
       .map {
         position: relative; flex: none; height: 1.6em; margin: 0.35em var(--pad) 0;
-        margin-left: calc(var(--pad) + var(--label-w) + var(--lane-gap));
         cursor: crosshair;
       }
       .map[hidden] { display: none; }
