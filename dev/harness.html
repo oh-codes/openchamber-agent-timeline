@@ -260,6 +260,19 @@
             return true;
           });
         }
+        if (params.has('clickmark')) {
+          waitForBars((frame) => {
+            const doc = frame.contentDocument;
+            const mark = doc?.querySelector('.mark');
+            if (!mark) return false;
+            const rect = mark.getBoundingClientRect();
+            const at = { bubbles: true, pointerId: 1, button: 0, clientX: rect.left + 1, clientY: rect.top + 6 };
+            mark.dispatchEvent(new PointerEvent('pointerdown', { ...at, buttons: 1 }));
+            mark.dispatchEvent(new PointerEvent('pointerup', { ...at, buttons: 0 }));
+            mark.dispatchEvent(new MouseEvent('click', { bubbles: true, clientX: at.clientX, clientY: at.clientY }));
+            return true;
+          });
+        }
         if (params.has('clickrun')) {
           waitForBars((frame) => {
             const doc = frame.contentDocument;

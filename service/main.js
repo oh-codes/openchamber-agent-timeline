@@ -132,6 +132,28 @@ function segmentsOfMessage(laneId, message) {
     return [{ lane: laneId, kind: 'user', name: 'prompt', start, end: num(message.time?.completed) ?? start, messageId: message.id, index: -1, preview: trim(firstText(parts), PREVIEW) }];
   }
 
+  /*
+   * A compaction is a message of its own with a single timestamp — the moment it
+   * ran. It blocks the session while it summarizes, so it is drawn as a marker
+   * (see the panel) rather than a bar with an end.
+   */
+  if (message.type === 'compaction') {
+    if (messageStart == null) return [];
+    return [{
+      lane: laneId,
+      kind: 'compaction',
+      name: 'compaction',
+      start: messageStart,
+      end: messageStart,
+      status: message.status || null,
+      reason: message.reason || null,
+      tokens: message.tokens ? { input: message.tokens.input, output: message.tokens.output, cacheRead: message.tokens.cache?.read } : null,
+      messageId: message.id,
+      index: -1,
+      preview: trim(message.summary, PREVIEW),
+    }];
+  }
+
   const rows = [];
   for (let i = 0; i < parts.length; i++) {
     const part = parts[i];
@@ -297,6 +319,22 @@ async function detailOf(sessionId, messageId, index) {
   const body = await oc(`/api/session/${encodeURIComponent(sessionId)}/message/${encodeURIComponent(messageId)}`);
   const message = body?.data;
   if (!message) throw new Error('message not found');
+  if (message.type === 'compaction') {
+    return {
+      message: { id: message.id, type: 'compaction', agent: message.agent, model: message.model, time: message.time, tokens: message.tokens },
+      part: {
+        type: 'compaction',
+        name: 'compaction',
+        status: message.status ?? null,
+        reason: message.reason ?? null,
+        text: trim(message.summary, 20000),
+        time: message.time,
+        wait: null,
+        waitLabel: null,
+      },
+      text: '',
+    };
+  }
   const part = index >= 0 ? message.content?.[index] : null;
   return {
     message: { id: message.id, type: message.type, agent: message.agent, model: message.model, time: message.time, tokens: message.tokens },

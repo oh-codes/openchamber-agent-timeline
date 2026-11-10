@@ -1839,6 +1839,9 @@ ${GUEST_UI_LOOK_CSS}`;
       waitSubagent: "waiting for",
       waitUser: "waiting for you",
       toolRun: (n) => `${n} tool calls`,
+      compaction: "Compaction",
+      summary: "Summary",
+      reason: "Reason",
       fontSize: "Text size",
       fontHint: "The host passes no interface size to extensions, so this is the panel\u2019s own.",
       mapHint: "Drag the window, or click the strip to jump.",
@@ -1882,6 +1885,9 @@ ${GUEST_UI_LOOK_CSS}`;
       waitSubagent: "wartet auf",
       waitUser: "wartet auf dich",
       toolRun: (n) => `${n} Tool-Aufrufe`,
+      compaction: "Kompaktierung",
+      summary: "Zusammenfassung",
+      reason: "Grund",
       fontSize: "Textgr\xF6\xDFe",
       fontHint: "Der Host \xFCbergibt Erweiterungen keine Interface-Gr\xF6\xDFe, das hier ist die eigene.",
       mapHint: "Fenster ziehen oder in den Streifen klicken.",
@@ -2196,6 +2202,12 @@ ${GUEST_UI_LOOK_CSS}`;
       ctx.fillRect(i * barWidth, height - barHeight - 1, Math.max(1, barWidth - 0.5), barHeight);
     }
     ctx.globalAlpha = 1;
+    const compactionColor = (tokens.getPropertyValue("--oc-warning") || "#d29922").trim();
+    ctx.fillStyle = compactionColor;
+    for (const segment of segments) {
+      if (segment.kind !== "compaction") continue;
+      ctx.fillRect(Math.round(scale.map(segment.start) * width), 0, 1, height);
+    }
     const span = Math.max(MIN_VIEW, state.view.end - state.view.start);
     if (span > 0.999) {
       dom.mapWin.hidden = true;
@@ -2414,6 +2426,7 @@ ${GUEST_UI_LOOK_CSS}`;
         track.className = "track";
         track.addEventListener("click", (event) => {
           if (performance.now() - state.panEndedAt < 300) return;
+          if (event.target.closest(".mark")) return;
           const hit = nearestBar(track, event);
           if (!hit) return;
           select(hit.segment, track.querySelector(`[data-key="${CSS.escape(hit.key)}"]`));
@@ -2428,12 +2441,18 @@ ${GUEST_UI_LOOK_CSS}`;
         row.append(name, track);
         row.name = name;
         row.track = track;
+        const marks = document.createElement("div");
+        marks.className = "marks";
+        track.append(marks);
+        row.marks = marks;
         row.cutsKey = "";
         return row;
       },
       (row, key) => {
         const group = byGroupKey.get(key);
-        const laneSegments = groupTools(byLane.get(key) || []);
+        const laneRaw = byLane.get(key) || [];
+        const compactions = laneRaw.filter((segment) => segment.kind === "compaction");
+        const laneSegments = groupTools(laneRaw.filter((segment) => segment.kind !== "compaction"));
         const rows = packRows(laneSegments);
         row.className = group.depth === 0 ? "lane root" : "lane";
         row.title = [
@@ -2498,6 +2517,32 @@ ${GUEST_UI_LOOK_CSS}`;
               countNote ? fmtDur(segment.end - segment.start) : "",
               waitNote,
               countNote ? segment.items.map((item) => item.name).slice(0, 8).join(", ") : segment.preview
+            ].filter(Boolean).join("\n");
+          }
+        );
+        const visibleCompactions = compactions.map((segment) => ({ segment, at: pct(segment.start) })).filter((entry) => entry.at >= -1 && entry.at <= 101);
+        row.marks._map = new Map(visibleCompactions.map((entry) => [entry.segment.messageId, entry.segment]));
+        syncChildren(
+          row.marks,
+          visibleCompactions.map((entry) => entry.segment.messageId),
+          (markKey) => {
+            const mark = document.createElement("div");
+            mark.className = "mark";
+            mark.addEventListener("click", () => {
+              const segment = row.marks._map.get(markKey);
+              if (segment) select(segment, mark);
+            });
+            return mark;
+          },
+          (mark, markKey) => {
+            const entry = visibleCompactions.find((candidate) => candidate.segment.messageId === markKey);
+            const segment = entry.segment;
+            mark.style.left = `${entry.at.toFixed(3)}%`;
+            mark.className = `mark${segment.status ? ` ${segment.status}` : ""}`;
+            mark.title = [
+              `${strings.compaction} \xB7 ${fmtClock(segment.start)}`,
+              segment.reason,
+              segment.preview
             ].filter(Boolean).join("\n");
           }
         );
@@ -2645,7 +2690,12 @@ ${GUEST_UI_LOOK_CSS}`;
     const nodes = [];
     const message = detail?.message || {};
     const part = detail?.part || null;
-    const facts = [
+    const isCompaction = part?.type === "compaction";
+    const facts = isCompaction ? [
+      [strings.model, message.model ? `${message.model.providerID || "?"}/${message.model.id || "?"}${message.model.variant ? `#${message.model.variant}` : ""}` : "\u2014"],
+      // A compaction is a moment, not a span.
+      [strings.time, fmtClock(segment.start)]
+    ] : [
       [strings.agent, message.agent || "\u2014"],
       [strings.model, message.model ? `${message.model.providerID || "?"}/${message.model.id || "?"}${message.model.variant ? `#${message.model.variant}` : ""}` : "\u2014"],
       [strings.time, `${fmtClock(segment.start)} \u2192 ${fmtClock(segment.end)}`],
@@ -2654,6 +2704,7 @@ ${GUEST_UI_LOOK_CSS}`;
     const lane = state.laneInfo.get(segment.lane);
     if (lane) facts.splice(1, 0, [strings.session, lane.title]);
     if (part?.status) facts.push([strings.status, part.status]);
+    if (part?.reason) facts.push([strings.reason, part.reason]);
     if (part?.wait) {
       const waitText = part.wait === "subagent" ? `${strings.waitSubagent} ${part.waitLabel || ""}`.trim() : strings.waitUser;
       facts.push([strings.waiting, waitText]);
@@ -2682,7 +2733,7 @@ ${GUEST_UI_LOOK_CSS}`;
     };
     if (part) {
       if (part.input) block(strings.input, typeof part.input === "string" ? part.input : JSON.stringify(part.input, null, 2));
-      if (part.text) block(part.type === "reasoning" ? strings.thinking : strings.text, part.text);
+      if (part.text) block(part.type === "compaction" ? strings.summary : part.type === "reasoning" ? strings.thinking : strings.text, part.text);
       if (part.output) block(strings.output, part.output);
     } else if (detail?.text) {
       block(strings.prompt, detail.text);
