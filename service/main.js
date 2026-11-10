@@ -176,6 +176,42 @@ function segmentsOfMessage(laneId, message) {
     if (row.running) row.end = Math.max(row.end, row.start + 40);
     delete row.running;
   }
+
+  /*
+   * A tool call is emitted while the part before it is still open, and that part
+   * is only closed a few hundred ms later. Left alone, every think -> act
+   * handover claims two things ran at once and pushes the tool into a second
+   * row. Thinking and text end where the next timed part begins; a tool's end is
+   * real execution time and stays untouched.
+   *
+   * Parts are not ordered by time in `content` (a text part carries no time and
+   * can sit between two timed ones), so this looks for the earliest later start
+   * instead of comparing neighbours.
+   */
+  for (const row of rows) {
+    if (row.kind === 'tool' || row.end == null) continue;
+    let next = null;
+    for (const other of rows) {
+      if (other === row || other.start == null) continue;
+      if (other.start > row.start && other.start < row.end && (next == null || other.start < next)) next = other.start;
+    }
+    if (next != null) row.end = next;
+  }
+
+  /*
+   * Text has no timestamp of its own, so it was given the gap after the previous
+   * part — which can sit inside a tool that ran later. Push it to the end of any
+   * part it overlaps, so the answer text never claims to run during a tool call.
+   */
+  for (const row of rows) {
+    if (row.kind !== 'text' || row.start == null) continue;
+    for (const other of rows) {
+      if (other === row || other.kind === 'text' || other.end == null) continue;
+      if (other.start <= row.start && other.end > row.start) row.start = other.end;
+    }
+    if (row.end != null && row.end < row.start) row.end = row.start + 40;
+  }
+
   return rows.filter((row) => row.start != null);
 }
 

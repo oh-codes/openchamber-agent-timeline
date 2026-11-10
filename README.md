@@ -45,7 +45,10 @@ Requires OpenChamber 2.5.0 or newer (`apiVersion: 1`).
 
 - **`text` parts carry no time at all.** They take the span from the previous part's end to the moment the message finished streaming (`time.streamed`) — never to the end of a later tool, which would stretch text over a blocking question.
 - **Running tools** end at "now", so the bar grows while the tool runs.
+- **Handovers are clipped.** OpenCode emits the next tool call 0.3–4 s before it closes the previous part, so thinking and text end where the next timed part begins. Without that, every think → act step looked like two things running at once and pushed the tool into a second row.
 - **Waiting calls** (`subagent`, `question`) are marked as such rather than drawn as work.
+
+A second row inside a lane therefore only appears for genuinely parallel calls — more than 0.4 s of real overlap.
 
 ## Limits
 

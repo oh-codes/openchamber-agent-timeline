@@ -272,10 +272,20 @@ function buildScale(bounds, segments, mode) {
   };
 }
 
+/**
+ * Segments that overlap only by a handover touch share a row.
+ *
+ * OpenCode emits the tool call a few hundred ms before the reasoning part is
+ * marked complete, so a strict "no overlap" rule pushed almost every tool into
+ * a second row for an artifact of 0.2–0.6 s. Real parallel calls are minutes
+ * apart from this threshold.
+ */
+const OVERLAP_MS = 400;
+
 function packRows(segments) {
   const rows = [];
   for (const segment of [...segments].sort((a, b) => a.start - b.start || a.end - b.end)) {
-    let row = rows.find((candidate) => segment.start >= candidate.end - 1);
+    let row = rows.find((candidate) => segment.start >= candidate.end - OVERLAP_MS);
     if (!row) {
       row = { end: segment.end, items: [] };
       rows.push(row);

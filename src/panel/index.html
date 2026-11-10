@@ -91,7 +91,11 @@
       }
       .seg:hover { filter: brightness(1.4); }
       .seg.sel { outline: 1px solid var(--oc-fg); outline-offset: 1px; }
-      .seg.reasoning { background: color-mix(in srgb, var(--oc-info, #58a6ff) 55%, transparent); }
+      .seg.reasoning {
+        background: color-mix(in srgb, var(--oc-info, #58a6ff) 55%, transparent);
+        /* Some themes carry a dark info colour; the edge keeps the bar readable. */
+        box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--oc-info-text, var(--oc-info, #58a6ff)) 55%, transparent);
+      }
       .seg.tool { background: color-mix(in srgb, var(--oc-primary, #6c8cff) 78%, transparent); }
       .seg.tool.error { background: var(--oc-error, #f85149); }
       .seg.tool.running { background: var(--oc-warning, #d29922); }

@@ -2052,10 +2052,11 @@ ${GUEST_UI_LOOK_CSS}`;
       cuts: cuts.map((cut) => ({ ...cut, fraction: 0 }))
     };
   }
+  var OVERLAP_MS = 400;
   function packRows(segments) {
     const rows = [];
     for (const segment of [...segments].sort((a, b) => a.start - b.start || a.end - b.end)) {
-      let row = rows.find((candidate) => segment.start >= candidate.end - 1);
+      let row = rows.find((candidate) => segment.start >= candidate.end - OVERLAP_MS);
       if (!row) {
         row = { end: segment.end, items: [] };
         rows.push(row);
