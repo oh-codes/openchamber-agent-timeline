@@ -296,14 +296,27 @@ async function load({ fresh = false } = {}) {
   }
 }
 
+/**
+ * Is anything in this tree still moving?
+ *
+ * A subagent can run in the background after the chat's own turn ended: the
+ * root is idle while a child keeps writing. Gating the poll on the root alone
+ * froze those lanes on the snapshot taken when the parent stopped.
+ */
+function isBusy() {
+  if (state.session?.busy) return true;
+  const lanes = state.timeline?.lanes || [];
+  if (lanes.length) return lanes.some((lane) => lane.status === 'working');
+  return state.timeline?.session?.status === 'working';
+}
+
 function schedule() {
   if (state.timer) {
     clearTimeout(state.timer);
     state.timer = null;
   }
   if (!state.session?.id) return;
-  const busy = state.session.busy || state.timeline?.session?.status === 'working';
-  if (!busy) return;
+  if (!isBusy()) return;
   state.timer = setTimeout(() => {
     state.timer = null;
     load();
@@ -332,7 +345,8 @@ function render() {
   const session = state.session;
   const timeline = state.timeline;
 
-  dom.status.className = `dot ${session?.busy || timeline?.session?.status === 'working' ? 'working' : 'idle'}`;
+  dom.status.className = `dot ${isBusy() ? 'working' : 'idle'}`;
+  dom.status.title = isBusy() ? strings.running : '';
   dom.agent.textContent = session?.agent || timeline?.session?.agent || '—';
   dom.title.textContent = session?.title || '';
   dom.title.title = session?.title || '';

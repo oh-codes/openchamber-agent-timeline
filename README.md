@@ -26,7 +26,8 @@ Eine Ordner-Installation liest direkt aus diesem Ordner: nach `npm run build` un
 | `Esc` | schließt die Details. |
 | ↻ | lädt neu, ohne den Dienst-Cache zu benutzen. |
 
-Während die Session arbeitet, fragt das Panel alle 1,5 s nach; im Ruhezustand passiert nichts.
+Während irgendeine Spur arbeitet, fragt das Panel alle 1,5 s nach; im Ruhezustand passiert nichts.
+Das gilt auch, wenn nur ein Unteragent im Hintergrund weiterläuft, während der Chat selbst schon still ist.
 
 ## Wie die Zeiten entstehen
 
