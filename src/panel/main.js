@@ -24,6 +24,7 @@ const STRINGS = {
     waiting: 'Waiting',
     waitSubagent: 'waiting for',
     waitUser: 'waiting for you',
+    toolRun: (n) => `${n} tool calls`,
     fontSize: 'Text size',
     fontHint: 'The host passes no interface size to extensions, so this is the panel’s own.',
     mapHint: 'Drag the window, or click the strip to jump.',
@@ -66,6 +67,7 @@ const STRINGS = {
     waiting: 'Warten',
     waitSubagent: 'wartet auf',
     waitUser: 'wartet auf dich',
+    toolRun: (n) => `${n} Tool-Aufrufe`,
     fontSize: 'Textgröße',
     fontHint: 'Der Host übergibt Erweiterungen keine Interface-Größe, das hier ist die eigene.',
     mapHint: 'Fenster ziehen oder in den Streifen klicken.',
@@ -164,12 +166,16 @@ const state = {
   scale: null,
   /** Text scale on top of the host's root size (which carries no size setting). */
   fontScale: 1,
+  /** The next render should open on the last DEFAULT_WINDOW_MS, not the whole span. */
+  viewPending: true,
   /** A pan just moved the view; the click that follows must not open a segment. */
   panEndedAt: 0,
 };
 
 const MIN_VIEW = 0.0008;
 const FONT_STEPS = [0.85, 1, 1.15, 1.3, 1.5];
+/** What a freshly opened chat shows: the last ten minutes, following. */
+const DEFAULT_WINDOW_MS = 10 * 60 * 1000;
 
 const t = () => STRINGS[state.lang] || STRINGS.en;
 
@@ -280,6 +286,52 @@ function buildScale(bounds, segments, mode) {
  * apart from this threshold.
  */
 const OVERLAP_MS = 400;
+
+/**
+ * A burst of tool calls becomes one bar.
+ *
+ * Ten calls in four seconds are ten hairlines that hide the shape of the turn.
+ * Calls that follow each other within TOOL_RUN_GAP are merged; the drawer then
+ * lists them one by one. A reasoning or text part ends the run, so thinking
+ * still separates the phases.
+ */
+const TOOL_RUN_GAP = 1500;
+
+function groupTools(segments) {
+  const sorted = [...segments].sort((a, b) => a.start - b.start || a.end - b.end);
+  const out = [];
+  let run = null;
+  for (const segment of sorted) {
+    if (segment.kind !== 'tool') {
+      run = null;
+      out.push(segment);
+      continue;
+    }
+    const last = run?.items[run.items.length - 1];
+    // A waiting call is a phase of its own, not part of a burst.
+    if (run && !segment.wait && !last.wait && segment.start - last.end <= TOOL_RUN_GAP) {
+      run.items.push(segment);
+      run.end = Math.max(run.end, segment.end);
+      run.status = segment.status === 'error' || run.status === 'error' ? 'error' : segment.status === 'running' || run.status === 'running' ? 'running' : run.status;
+      continue;
+    }
+    run = {
+      kind: 'tool',
+      name: segment.name,
+      start: segment.start,
+      end: segment.end,
+      status: segment.status,
+      wait: segment.wait,
+      items: [segment],
+      lane: segment.lane,
+      messageId: segment.messageId,
+      index: segment.index,
+    };
+    out.push(run);
+  }
+  // A run of one is just the segment itself.
+  return out.map((item) => (item.items && item.items.length === 1 ? item.items[0] : item));
+}
 
 function packRows(segments) {
   const rows = [];
@@ -542,6 +594,7 @@ function setSession(session) {
   state.timeline = null;
   state.error = null;
   state.selected = null;
+  state.viewPending = true;
   resetView();
   closeDrawer();
   render();
@@ -597,6 +650,15 @@ function render() {
   // A pinned slice is re-derived from its times: the span it was a fraction of
   // has probably grown since the last poll. A slice at the newest end instead
   // keeps its width and moves with the end.
+  if (state.viewPending) {
+    // A chat opens on the recent work, not on three hours of history.
+    state.viewPending = false;
+    const from = timeline.window.end - DEFAULT_WINDOW_MS;
+    const startFraction = from > timeline.window.start ? scale.map(from) : 0;
+    state.follow = true;
+    state.followSpan = Math.max(MIN_VIEW, 1 - startFraction);
+    state.anchor = null;
+  }
   if (state.follow) {
     const span = Math.min(1, Math.max(MIN_VIEW, state.followSpan ?? 1));
     state.view = { start: 1 - span, end: 1 };
@@ -710,7 +772,7 @@ function render() {
     },
     (row, key) => {
       const group = byGroupKey.get(key);
-      const laneSegments = byLane.get(key) || [];
+      const laneSegments = groupTools(byLane.get(key) || []);
       const rows = packRows(laneSegments);
 
       row.className = group.depth === 0 ? 'lane root' : 'lane';
@@ -783,10 +845,12 @@ function render() {
             : segment.wait === 'user'
               ? strings.waitUser
               : '';
+          const countNote = segment.items?.length > 1 ? strings.toolRun(segment.items.length) : '';
           bar.title = [
-            `${segment.name} · ${fmtDur(segment.end - segment.start)}`,
+            countNote || `${segment.name} · ${fmtDur(segment.end - segment.start)}`,
+            countNote ? fmtDur(segment.end - segment.start) : '',
             waitNote,
-            segment.preview,
+            countNote ? segment.items.map((item) => item.name).slice(0, 8).join(', ') : segment.preview,
           ].filter(Boolean).join('\n');
         },
       );
@@ -902,7 +966,35 @@ function select(segment, bar) {
   state.selected = key;
   for (const other of dom.lanes.querySelectorAll('.seg.sel')) other.classList.remove('sel');
   bar?.classList.add('sel');
-  openDetail(segment);
+  if (segment.items?.length > 1) openToolRun(segment);
+  else openDetail(segment);
+}
+
+/** A merged tool run: the drawer lists the calls, each one opens its detail. */
+function openToolRun(run) {
+  const strings = t();
+  state.detailSeq += 1;
+  dom.drawer.hidden = false;
+  dom.drawerKind.textContent = strings.toolRun(run.items.length);
+  dom.drawerWhat.textContent = `${fmtClock(run.start)} → ${fmtClock(run.end)} · ${fmtDur(run.end - run.start)}`;
+
+  const list = document.createElement('ul');
+  list.className = 'runs';
+  for (const item of run.items) {
+    const row = document.createElement('li');
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'run-row';
+    button.innerHTML = [
+      `<span class="run-name">${esc(item.name)}</span>`,
+      `<span class="run-dur">${esc(fmtDur(item.end - item.start))}</span>`,
+      item.status ? `<span class="run-status ${esc(item.status)}">${esc(item.status)}</span>` : '',
+    ].join('');
+    button.addEventListener('click', () => openDetail(item));
+    row.append(button);
+    list.append(row);
+  }
+  dom.drawerBody.replaceChildren(list);
 }
 
 function closeDrawer() {

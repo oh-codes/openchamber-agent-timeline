@@ -16,7 +16,8 @@ Subagents get their own lane under the root, so a run that fans out to `coder`, 
 | **Overlap** | segments that collide get a sub-row inside their lane instead of covering each other. |
 | **active** | idle stretches longer than 15 s are compressed, so the work fills the width. |
 | **clock** | linear time axis. |
-| **Zoom** | `+` / `−`, Ctrl+wheel zooms under the pointer, drag pans, double-click a bar zooms onto it, `fit` (or `0`) shows everything again. Bars and rows grow with the zoom factor and with the panel width, so a wide page and a deep zoom do not end up as hairlines. |
+| **Tool run** | consecutive tool calls (within 1.5 s of each other, no thinking in between) merge into one bar. Clicking it lists the calls in the drawer; each row opens its own detail. |
+| **Zoom** | `+` / `−`, Ctrl+wheel zooms under the pointer, drag pans, double-click a bar zooms onto it, `fit` (or `0`) shows everything again. A chat opens on the **last 10 minutes** and follows the newest end; the spread over the whole session is the `fit` button. Bars and rows grow with the zoom factor and with the panel width. |
 | **Overview strip** | the whole session as a density map; the framed window is the visible slice. Drag it, or click beside it to jump. |
 | **Aa** | text size in five steps (85–150 %), remembered per extension. |
 | **Click** | opens the details: agent, session, model, tokens, duration, input/output. `Esc` closes. |

@@ -260,6 +260,22 @@
             return true;
           });
         }
+        if (params.has('clickrun')) {
+          waitForBars((frame) => {
+            const doc = frame.contentDocument;
+            const bar = [...(doc?.querySelectorAll('.seg') || [])].find((node) => /Tool-Aufrufe|tool calls/.test(node.title));
+            if (!bar) return false;
+            const rect = bar.getBoundingClientRect();
+            const at = { bubbles: true, pointerId: 1, button: 0, clientX: rect.left + rect.width / 2, clientY: rect.top + 2 };
+            bar.dispatchEvent(new PointerEvent('pointerdown', { ...at, buttons: 1 }));
+            bar.dispatchEvent(new PointerEvent('pointerup', { ...at, buttons: 0 }));
+            bar.dispatchEvent(new MouseEvent('click', { bubbles: true, clientX: at.clientX, clientY: at.clientY }));
+            if (params.get('clickrun') === 'row') {
+              setTimeout(() => doc.querySelector('.run-row')?.dispatchEvent(new MouseEvent('click', { bubbles: true })), 500);
+            }
+            return true;
+          });
+        }
         if (params.has('clickw')) {
           waitForBars((frame) => {
             const doc = frame.contentDocument;

@@ -155,6 +155,19 @@
         white-space: pre-wrap; word-break: break-word; max-height: 14em; overflow: auto;
       }
       .dbody .cap { font-size: 0.75em; text-transform: uppercase; letter-spacing: 0.04em; color: var(--oc-muted, #9a9aa8); margin: 0 0 0.2em; }
+      .dbody .runs { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 1px; }
+      .dbody .run-row {
+        display: flex; align-items: baseline; gap: 0.5em; width: 100%; text-align: left;
+        background: none; border: 0; color: inherit; font: inherit; cursor: pointer;
+        padding: 0.15em 0.3em; border-radius: 3px;
+        font-family: var(--oc-mono, monospace); font-size: 0.82em;
+      }
+      .dbody .run-row:hover { background: var(--oc-hover, rgba(255,255,255,.06)); }
+      .dbody .run-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .dbody .run-dur { color: var(--oc-muted, #9a9aa8); font-variant-numeric: tabular-nums; }
+      .dbody .run-status { color: var(--oc-muted, #9a9aa8); }
+      .dbody .run-status.error { color: var(--oc-error-text, var(--oc-error, #f85149)); }
+      .dbody .run-status.running { color: var(--oc-warning-text, var(--oc-warning, #d29922)); }
     </style>
   </head>
   <body>

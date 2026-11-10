@@ -1838,6 +1838,7 @@ ${GUEST_UI_LOOK_CSS}`;
       waiting: "Waiting",
       waitSubagent: "waiting for",
       waitUser: "waiting for you",
+      toolRun: (n) => `${n} tool calls`,
       fontSize: "Text size",
       fontHint: "The host passes no interface size to extensions, so this is the panel\u2019s own.",
       mapHint: "Drag the window, or click the strip to jump.",
@@ -1880,6 +1881,7 @@ ${GUEST_UI_LOOK_CSS}`;
       waiting: "Warten",
       waitSubagent: "wartet auf",
       waitUser: "wartet auf dich",
+      toolRun: (n) => `${n} Tool-Aufrufe`,
       fontSize: "Textgr\xF6\xDFe",
       fontHint: "Der Host \xFCbergibt Erweiterungen keine Interface-Gr\xF6\xDFe, das hier ist die eigene.",
       mapHint: "Fenster ziehen oder in den Streifen klicken.",
@@ -1967,11 +1969,14 @@ ${GUEST_UI_LOOK_CSS}`;
     scale: null,
     /** Text scale on top of the host's root size (which carries no size setting). */
     fontScale: 1,
+    /** The next render should open on the last DEFAULT_WINDOW_MS, not the whole span. */
+    viewPending: true,
     /** A pan just moved the view; the click that follows must not open a segment. */
     panEndedAt: 0
   };
   var MIN_VIEW = 8e-4;
   var FONT_STEPS = [0.85, 1, 1.15, 1.3, 1.5];
+  var DEFAULT_WINDOW_MS = 10 * 60 * 1e3;
   var t = () => STRINGS[state.lang] || STRINGS.en;
   function byId(id) {
     return document.getElementById(id);
@@ -2052,6 +2057,40 @@ ${GUEST_UI_LOOK_CSS}`;
     };
   }
   var OVERLAP_MS = 400;
+  var TOOL_RUN_GAP = 1500;
+  function groupTools(segments) {
+    const sorted = [...segments].sort((a, b) => a.start - b.start || a.end - b.end);
+    const out = [];
+    let run = null;
+    for (const segment of sorted) {
+      if (segment.kind !== "tool") {
+        run = null;
+        out.push(segment);
+        continue;
+      }
+      const last = run?.items[run.items.length - 1];
+      if (run && !segment.wait && !last.wait && segment.start - last.end <= TOOL_RUN_GAP) {
+        run.items.push(segment);
+        run.end = Math.max(run.end, segment.end);
+        run.status = segment.status === "error" || run.status === "error" ? "error" : segment.status === "running" || run.status === "running" ? "running" : run.status;
+        continue;
+      }
+      run = {
+        kind: "tool",
+        name: segment.name,
+        start: segment.start,
+        end: segment.end,
+        status: segment.status,
+        wait: segment.wait,
+        items: [segment],
+        lane: segment.lane,
+        messageId: segment.messageId,
+        index: segment.index
+      };
+      out.push(run);
+    }
+    return out.map((item) => item.items && item.items.length === 1 ? item.items[0] : item);
+  }
   function packRows(segments) {
     const rows = [];
     for (const segment of [...segments].sort((a, b) => a.start - b.start || a.end - b.end)) {
@@ -2258,6 +2297,7 @@ ${GUEST_UI_LOOK_CSS}`;
     state.timeline = null;
     state.error = null;
     state.selected = null;
+    state.viewPending = true;
     resetView();
     closeDrawer();
     render();
@@ -2296,6 +2336,14 @@ ${GUEST_UI_LOOK_CSS}`;
     const scale = buildScale(timeline.window, segments, state.mode);
     if (!scale) return showNote(strings.noSegments);
     state.scale = scale;
+    if (state.viewPending) {
+      state.viewPending = false;
+      const from = timeline.window.end - DEFAULT_WINDOW_MS;
+      const startFraction = from > timeline.window.start ? scale.map(from) : 0;
+      state.follow = true;
+      state.followSpan = Math.max(MIN_VIEW, 1 - startFraction);
+      state.anchor = null;
+    }
     if (state.follow) {
       const span = Math.min(1, Math.max(MIN_VIEW, state.followSpan ?? 1));
       state.view = { start: 1 - span, end: 1 };
@@ -2385,7 +2433,7 @@ ${GUEST_UI_LOOK_CSS}`;
       },
       (row, key) => {
         const group = byGroupKey.get(key);
-        const laneSegments = byLane.get(key) || [];
+        const laneSegments = groupTools(byLane.get(key) || []);
         const rows = packRows(laneSegments);
         row.className = group.depth === 0 ? "lane root" : "lane";
         row.title = [
@@ -2444,10 +2492,12 @@ ${GUEST_UI_LOOK_CSS}`;
             bar.style.top = `${rowIndex * rowHeight + 1 + Math.round((barHeight - height) / 2)}px`;
             bar.style.height = `${height}px`;
             const waitNote = segment.wait === "subagent" ? `${strings.waitSubagent} ${segment.waitLabel || ""}`.trim() : segment.wait === "user" ? strings.waitUser : "";
+            const countNote = segment.items?.length > 1 ? strings.toolRun(segment.items.length) : "";
             bar.title = [
-              `${segment.name} \xB7 ${fmtDur(segment.end - segment.start)}`,
+              countNote || `${segment.name} \xB7 ${fmtDur(segment.end - segment.start)}`,
+              countNote ? fmtDur(segment.end - segment.start) : "",
               waitNote,
-              segment.preview
+              countNote ? segment.items.map((item) => item.name).slice(0, 8).join(", ") : segment.preview
             ].filter(Boolean).join("\n");
           }
         );
@@ -2536,7 +2586,32 @@ ${GUEST_UI_LOOK_CSS}`;
     state.selected = key;
     for (const other of dom.lanes.querySelectorAll(".seg.sel")) other.classList.remove("sel");
     bar?.classList.add("sel");
-    openDetail(segment);
+    if (segment.items?.length > 1) openToolRun(segment);
+    else openDetail(segment);
+  }
+  function openToolRun(run) {
+    const strings = t();
+    state.detailSeq += 1;
+    dom.drawer.hidden = false;
+    dom.drawerKind.textContent = strings.toolRun(run.items.length);
+    dom.drawerWhat.textContent = `${fmtClock(run.start)} \u2192 ${fmtClock(run.end)} \xB7 ${fmtDur(run.end - run.start)}`;
+    const list = document.createElement("ul");
+    list.className = "runs";
+    for (const item of run.items) {
+      const row = document.createElement("li");
+      const button2 = document.createElement("button");
+      button2.type = "button";
+      button2.className = "run-row";
+      button2.innerHTML = [
+        `<span class="run-name">${esc(item.name)}</span>`,
+        `<span class="run-dur">${esc(fmtDur(item.end - item.start))}</span>`,
+        item.status ? `<span class="run-status ${esc(item.status)}">${esc(item.status)}</span>` : ""
+      ].join("");
+      button2.addEventListener("click", () => openDetail(item));
+      row.append(button2);
+      list.append(row);
+    }
+    dom.drawerBody.replaceChildren(list);
   }
   function closeDrawer() {
     dom.drawer.hidden = true;
