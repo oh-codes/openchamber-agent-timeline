@@ -55,8 +55,9 @@
           session = list[0];
         }
 
+        const hostSize = new URLSearchParams(location.search).get('hs');
         const context = {
-          theme,
+          theme: hostSize ? { ...theme, tokens: { ...theme.tokens, fontSize: `${hostSize}px` } } : theme,
           locale: 'de',
           directory: session?.directory || 'E:\\Coding\\Openchamber_team',
           session: {

@@ -21,8 +21,8 @@
         overflow: hidden;
       }
       /* Everything below is em: one factor scales the whole panel, and the base
-         is the host's 14px root instead of a size I picked. */
-      body { font-family: var(--oc-font, system-ui, sans-serif); font-size: calc(1rem * var(--fs-scale)); line-height: 1.4; }
+         is the host's root (or its size token, once the host sends one). */
+      body { font-family: var(--oc-font, system-ui, sans-serif); font-size: calc(var(--host-font-size, 1rem) * var(--fs-scale)); line-height: 1.4; }
       * { box-sizing: border-box; }
 
       #root { display: flex; flex-direction: column; height: 100%; min-height: 0; }

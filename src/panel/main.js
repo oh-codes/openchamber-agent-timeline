@@ -1081,6 +1081,10 @@ async function restoreFontScale() {
 
 host.onReady((context) => {
   applyHostReady(context, document.documentElement);
+  // Forward-looking: the host does not send a size yet (openchamber#6758), but
+  // when it does, the panel follows without another change here.
+  const hostSize = context?.theme?.tokens?.fontSize;
+  if (typeof hostSize === 'string' && hostSize) document.documentElement.style.setProperty('--host-font-size', hostSize);
   state.lang = String(context.locale || '').toLowerCase().startsWith('de') ? 'de' : 'en';
   setSession(context.session);
   restoreFontScale();
