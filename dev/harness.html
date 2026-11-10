@@ -241,6 +241,19 @@
             return true;
           });
         }
+        if (params.has('clickw')) {
+          waitForBars((frame) => {
+            const doc = frame.contentDocument;
+            const bar = doc?.querySelector('.seg.waiting');
+            if (!bar) return false;
+            const rect = bar.getBoundingClientRect();
+            const at = { bubbles: true, pointerId: 1, button: 0, clientX: rect.left + 3, clientY: rect.top + 2 };
+            bar.dispatchEvent(new PointerEvent('pointerdown', { ...at, buttons: 1 }));
+            bar.dispatchEvent(new PointerEvent('pointerup', { ...at, buttons: 0 }));
+            bar.dispatchEvent(new MouseEvent('click', { bubbles: true, clientX: at.clientX, clientY: at.clientY }));
+            return true;
+          });
+        }
         if (params.has('click')) {
           waitForBars((frame) => {
             const bar = frame.contentDocument?.querySelector('.seg.tool, .seg.reasoning');

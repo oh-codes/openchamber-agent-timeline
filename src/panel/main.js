@@ -21,6 +21,9 @@ const STRINGS = {
     zoomOut: 'Zoom out',
     fit: 'Fit the whole timeline',
     zoomHint: 'Ctrl+wheel zooms, drag pans, double-click a bar zooms to it.',
+    waiting: 'Waiting',
+    waitSubagent: 'waiting for',
+    waitUser: 'waiting for you',
     fontSize: 'Text size',
     fontHint: 'The host passes no interface size to extensions, so this is the panel’s own.',
     mapHint: 'Drag the window, or click the strip to jump.',
@@ -47,7 +50,7 @@ const STRINGS = {
     tool: 'Tool',
     reasoning: 'Thinking',
     user: 'Prompt',
-    legend: { reasoning: 'thinking', tool: 'tool', text: 'text', user: 'prompt' },
+    legend: { reasoning: 'thinking', tool: 'tool', text: 'text', user: 'prompt', waiting: 'waiting' },
   },
   de: {
     empty: 'Keine Session offen. Öffne einen Chat, dann erscheint seine Zeitachse.',
@@ -60,6 +63,9 @@ const STRINGS = {
     zoomOut: 'Verkleinern',
     fit: 'Ganze Zeitachse zeigen',
     zoomHint: 'Strg+Mausrad zoomt, Ziehen verschiebt, Doppelklick auf einen Balken zoomt darauf.',
+    waiting: 'Warten',
+    waitSubagent: 'wartet auf',
+    waitUser: 'wartet auf dich',
     fontSize: 'Textgröße',
     fontHint: 'Der Host übergibt Erweiterungen keine Interface-Größe, das hier ist die eigene.',
     mapHint: 'Fenster ziehen oder in den Streifen klicken.',
@@ -86,7 +92,7 @@ const STRINGS = {
     tool: 'Tool',
     reasoning: 'Denken',
     user: 'Prompt',
-    legend: { reasoning: 'Denken', tool: 'Tool', text: 'Text', user: 'Prompt' },
+    legend: { reasoning: 'Denken', tool: 'Tool', text: 'Text', user: 'Prompt', waiting: 'Warten' },
   },
 };
 
@@ -545,8 +551,14 @@ function render() {
     ? [timeline.session?.model || session?.model, narrow ? null : session?.id].filter(Boolean).join(' · ')
     : session?.model || '';
 
-  dom.legend.innerHTML = ['reasoning', 'tool', 'text', 'user']
-    .map((kind) => `<span><i class="seg ${kind}" style="position:static;display:inline-block"></i>${esc(strings.legend[kind])}</span>`)
+  dom.legend.innerHTML = [
+    ['reasoning', 'reasoning'],
+    ['tool', 'tool'],
+    ['waiting', 'tool waiting'],
+    ['text', 'text'],
+    ['user', 'user'],
+  ]
+    .map(([key, classes]) => `<span><i class="seg ${classes}" style="position:static;display:inline-block"></i>${esc(strings.legend[key])}</span>`)
     .join('');
 
   if (!session?.id) return showNote(strings.empty);
@@ -729,13 +741,22 @@ function render() {
           const { segment, rowIndex, left, right } = geometry.get(barKey);
           // Thinking is the backdrop to the work: a slimmer bar than a tool call.
           const height = segment.kind === 'reasoning' ? Math.max(4, Math.round(barHeight * 0.6)) : barHeight;
-          const className = `seg ${segment.kind}${segment.status ? ` ${segment.status}` : ''}${state.selected === barKey ? ' sel' : ''}`;
+          const className = `seg ${segment.kind}${segment.status ? ` ${segment.status}` : ''}${segment.wait ? ' waiting' : ''}${state.selected === barKey ? ' sel' : ''}`;
           if (bar.className !== className) bar.className = className;
           bar.style.left = `${left.toFixed(3)}%`;
           bar.style.width = `${Math.max(right - left, 0.12).toFixed(3)}%`;
           bar.style.top = `${rowIndex * rowHeight + 1 + Math.round((barHeight - height) / 2)}px`;
           bar.style.height = `${height}px`;
-          bar.title = `${segment.name} · ${fmtDur(segment.end - segment.start)}${segment.preview ? `\n${segment.preview}` : ''}`;
+          const waitNote = segment.wait === 'subagent'
+            ? `${strings.waitSubagent} ${segment.waitLabel || ''}`.trim()
+            : segment.wait === 'user'
+              ? strings.waitUser
+              : '';
+          bar.title = [
+            `${segment.name} · ${fmtDur(segment.end - segment.start)}`,
+            waitNote,
+            segment.preview,
+          ].filter(Boolean).join('\n');
         },
       );
     },
@@ -877,6 +898,12 @@ function renderDetail(detail, segment) {
   const lane = state.laneInfo.get(segment.lane);
   if (lane) facts.splice(1, 0, [strings.session, lane.title]);
   if (part?.status) facts.push([strings.status, part.status]);
+  if (part?.wait) {
+    const waitText = part.wait === 'subagent'
+      ? `${strings.waitSubagent} ${part.waitLabel || ''}`.trim()
+      : strings.waitUser;
+    facts.push([strings.waiting, waitText]);
+  }
   if (message.tokens) {
     const tokens = ['input', 'output', 'reasoning'].filter((key) => typeof message.tokens[key] === 'number').map((key) => `${key} ${message.tokens[key]}`);
     if (tokens.length) facts.push([strings.tokens, tokens.join(' · ')]);

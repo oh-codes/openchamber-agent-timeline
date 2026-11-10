@@ -19,6 +19,7 @@ Eine Ordner-Installation liest direkt aus diesem Ordner: nach `npm run build` un
 |---|---|
 | Spur | ein Agent-Level, sein Name steht **über** der Spur, die Balken nutzen die volle Breite. Unteragenten rücken mit `·`-Präfix ein, die Wurzel steht oben. Zwei `coder`-Sessions derselben Ebene teilen sich eine Spur und stehen als `coder ×2` da. |
 | Balken | Denken (dünn, blau), Tool (kräftig, blau / gelb = läuft / rot = Fehler), Text (grün), Prompt (grau, Strich). |
+| **Warten** | schraffiert statt gefüllt: `subagent` wartet auf einen Unteragenten, `question` auf deine Antwort. Im Tooltip und im Detail steht, auf wen. |
 | Überlappung | Segmente, die zeitlich kollidieren, bekommen automatisch eine Unterzeile in ihrer Spur. |
 | **aktiv** | Pausen über 15 s werden gestaucht, die Arbeit füllt die Breite. |
 | **Uhrzeit** | lineare Zeitachse. |

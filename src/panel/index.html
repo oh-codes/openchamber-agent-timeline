@@ -95,6 +95,16 @@
       .seg.tool { background: color-mix(in srgb, var(--oc-primary, #6c8cff) 78%, transparent); }
       .seg.tool.error { background: var(--oc-error, #f85149); }
       .seg.tool.running { background: var(--oc-warning, #d29922); }
+      /* Waiting is not work: a hatched outline instead of a filled bar. */
+      .seg.tool.waiting {
+        background: repeating-linear-gradient(
+          45deg,
+          color-mix(in srgb, var(--oc-muted, #9a9aa8) 46%, transparent) 0 3px,
+          transparent 3px 7px
+        );
+        box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--oc-muted, #9a9aa8) 55%, transparent);
+      }
+      .seg.tool.waiting.error { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--oc-error, #f85149) 70%, transparent); }
       .seg.text { background: color-mix(in srgb, var(--oc-success, #3fb950) 62%, transparent); }
       .seg.user { background: color-mix(in srgb, var(--oc-muted, #9a9aa8) 70%, transparent); }
 

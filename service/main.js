@@ -87,6 +87,25 @@ function segmentKind(part) {
   return part.type || 'other';
 }
 
+/** Tools that do no work themselves: they wait for a subagent or for the user. */
+const WAIT_SUBAGENT = new Set(['subagent', 'task', 'delegate']);
+
+function waitOf(part) {
+  if (part?.type !== 'tool') return { wait: null, waitLabel: null };
+  const input = part.state?.input || {};
+  if (WAIT_SUBAGENT.has(part.name)) {
+    const agent = typeof input.agent === 'string' ? input.agent : '';
+    const what = typeof input.description === 'string' ? input.description : '';
+    return { wait: 'subagent', waitLabel: trim([agent, what].filter(Boolean).join(' — '), 140) || null };
+  }
+  if (part.name === 'question') {
+    const first = Array.isArray(input.questions) ? input.questions[0] : null;
+    const text = typeof first?.question === 'string' ? first.question : typeof input.question === 'string' ? input.question : '';
+    return { wait: 'user', waitLabel: trim(text, 140) || null };
+  }
+  return { wait: null, waitLabel: null };
+}
+
 function trim(text, max) {
   const s = typeof text === 'string' ? text : text == null ? '' : JSON.stringify(text);
   return s.length > max ? s.slice(0, max) + '…' : s;
@@ -127,6 +146,7 @@ function segmentsOfMessage(laneId, message) {
       end: running ? Date.now() : num(part.time?.completed) ?? (kind === 'tool' ? num(part.time?.ran) : null),
       running,
       status: part.type === 'tool' ? part.state?.status || null : null,
+      ...waitOf(part),
       messageId: message.id,
       index: i,
       preview: previewOf(part),
@@ -244,7 +264,7 @@ async function detailOf(sessionId, messageId, index) {
   const part = index >= 0 ? message.content?.[index] : null;
   return {
     message: { id: message.id, type: message.type, agent: message.agent, model: message.model, time: message.time, tokens: message.tokens },
-    part: part ? { type: part.type, name: part.name, text: trim(part.text, 8000), input: part.state?.input ?? null, output: trim(part.state?.content, 8000), status: part.state?.status ?? null, time: part.time } : null,
+    part: part ? { type: part.type, name: part.name, text: trim(part.text, 8000), input: part.state?.input ?? null, output: trim(part.state?.content, 8000), status: part.state?.status ?? null, time: part.time, ...waitOf(part) } : null,
     /** A prompt segment has no part: the detail view shows the message text instead. */
     text: part ? '' : trim(firstText(Array.isArray(message.content) ? message.content : []), 8000),
   };
