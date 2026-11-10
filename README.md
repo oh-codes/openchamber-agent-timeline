@@ -18,7 +18,7 @@ Subagents get their own lane under the root, so a run that fans out to `coder`, 
 | **clock** | linear time axis. |
 | **Tool run** | consecutive tool calls (within 1.5 s of each other, no thinking in between) merge into one bar. Clicking it lists the calls in the drawer; each row opens its own detail. |
 | **Compaction** | a dashed amber line with a corner flag at the moment the context was summarized, plus a tick in the overview strip so it is findable when zoomed in. Clicking it shows reason, model, tokens and the summary. |
-| **Zoom** | `+` / `−`, Ctrl+wheel zooms under the pointer, drag pans, double-click a bar zooms onto it, `fit` (or `0`) shows everything again. A chat opens on the **last 10 minutes** and follows the newest end; the spread over the whole session is the `fit` button. Bars and rows grow with the zoom factor and with the panel width. |
+| **Zoom** | `+` / `−`, Ctrl+wheel zooms under the pointer, drag pans, double-click a bar zooms onto it, `fit` (or `0`) shows everything again. A chat opens on the **last 10 minutes** and follows the newest end; the toolbar shows how much time the window currently covers. Bars and rows grow with the zoom factor and with the panel width. |
 | **Overview strip** | the whole session as a density map; the framed window is the visible slice. Drag it, or click beside it to jump. |
 | **Aa** | text size in five steps (85–150 %), remembered per extension. |
 | **Click** | opens the details: agent, session, model, tokens, duration, input/output. `Esc` closes. |

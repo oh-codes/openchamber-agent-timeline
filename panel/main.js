@@ -1971,7 +1971,8 @@ ${GUEST_UI_LOOK_CSS}`;
     anchor: null,
     /** The slice touches the newest end: keep it there and let it grow. */
     follow: true,
-    followSpan: 1,
+    /** Width of the following window in chart milliseconds (null = the whole span). */
+    followMs: null,
     scale: null,
     /** Text scale on top of the host's root size (which carries no size setting). */
     fontScale: 1,
@@ -2027,37 +2028,45 @@ ${GUEST_UI_LOOK_CSS}`;
         cuts: []
       };
     }
-    const pieces = [];
+    const parts = [];
     const cuts = [];
     let virtualEnd = 0;
+    const addPart = (from, to, width) => {
+      if (to - from <= 0) return;
+      parts.push({ from, to, virtualStart: virtualEnd, virtualLength: Math.max(1e-6, width) });
+      virtualEnd += Math.max(1e-6, width);
+    };
     for (let i = 0; i < spans.length; i++) {
       const [from, to] = spans[i];
       const gapStart = i === 0 ? start : spans[i - 1][1];
       const gap = from - gapStart;
-      if (gap > GAP_MS) {
-        cuts.push({ at: from, gap });
-        virtualEnd += GAP_MS;
-      } else if (gap > 0) {
-        virtualEnd += gap;
+      if (gap > 0) {
+        if (gap > GAP_MS) cuts.push({ at: from, gap });
+        addPart(gapStart, from, Math.min(gap, GAP_MS));
       }
-      pieces.push({ from, to, virtualStart: virtualEnd });
-      virtualEnd += Math.max(1, to - from);
+      addPart(from, to, Math.max(1, to - from));
     }
-    const total = Math.max(1, virtualEnd);
+    const total = Math.max(1e-6, virtualEnd);
+    const ratio = (part) => (part.to - part.from) / part.virtualLength;
     return {
+      total,
       map: (time) => {
-        for (const piece of pieces) {
-          if (time <= piece.to) return clamp01((piece.virtualStart + Math.max(0, Math.min(time, piece.to) - piece.from)) / total);
+        for (const part of parts) {
+          if (time <= part.to) {
+            const clamped = Math.min(Math.max(time, part.from), part.to);
+            return clamp01((part.virtualStart + (clamped - part.from) / ratio(part)) / total);
+          }
         }
         return 1;
       },
       unmap: (fraction) => {
-        const target = fraction * total;
-        for (const piece of pieces) {
-          const length = Math.max(1, piece.to - piece.from);
-          if (target <= piece.virtualStart + length) return piece.from + Math.max(0, target - piece.virtualStart);
+        const target = clamp01(fraction) * total;
+        for (const part of parts) {
+          if (target <= part.virtualStart + part.virtualLength) {
+            return part.from + (target - part.virtualStart) * ratio(part);
+          }
         }
-        return pieces[pieces.length - 1].to;
+        return parts[parts.length - 1].to;
       },
       cuts: cuts.map((cut) => ({ ...cut, fraction: 0 }))
     };
@@ -2097,6 +2106,18 @@ ${GUEST_UI_LOOK_CSS}`;
     }
     return out.map((item) => item.items && item.items.length === 1 ? item.items[0] : item);
   }
+  function spanForDuration(scale, targetMs) {
+    const endTime = scale.unmap(1);
+    if (endTime - scale.unmap(0) <= targetMs) return 1;
+    let low = 0;
+    let high = 1;
+    for (let i = 0; i < 24; i++) {
+      const middle = (low + high) / 2;
+      if (endTime - scale.unmap(middle) > targetMs) low = middle;
+      else high = middle;
+    }
+    return Math.max(MIN_VIEW, 1 - high);
+  }
   function packRows(segments) {
     const rows = [];
     for (const segment of [...segments].sort((a, b) => a.start - b.start || a.end - b.end)) {
@@ -2126,12 +2147,12 @@ ${GUEST_UI_LOOK_CSS}`;
     const span = state.view.end - state.view.start;
     if (state.view.end > 0.995) {
       state.follow = true;
-      state.followSpan = span;
+      state.followMs = Math.max(1e3, state.scale.unmap(state.view.end) - state.scale.unmap(state.view.start));
       state.anchor = null;
       return;
     }
     state.follow = false;
-    state.followSpan = null;
+    state.followMs = null;
     if (span > 0.999) {
       state.anchor = null;
       return;
@@ -2165,7 +2186,7 @@ ${GUEST_UI_LOOK_CSS}`;
   function resetView() {
     state.view = { start: 0, end: 1 };
     state.follow = true;
-    state.followSpan = 1;
+    state.followMs = null;
     state.anchor = null;
   }
   var viewZoom = () => 1 / Math.max(MIN_VIEW, state.view.end - state.view.start);
@@ -2315,6 +2336,16 @@ ${GUEST_UI_LOOK_CSS}`;
     render();
     if (session?.id) load();
   }
+  function fmtWindow(ms) {
+    if (!Number.isFinite(ms) || ms < 0) return "\u2014";
+    if (ms < 1e3) return "0s";
+    if (ms < 6e4) return `${Math.round(ms / 1e3)}s`;
+    const minutes = Math.round(ms / 6e4);
+    if (minutes < 60) return `${minutes}m`;
+    const hours = Math.floor(minutes / 60);
+    const rest = minutes % 60;
+    return rest ? `${hours}h ${rest}m` : `${hours}h`;
+  }
   function render() {
     const strings = t();
     const session = state.session;
@@ -2350,14 +2381,13 @@ ${GUEST_UI_LOOK_CSS}`;
     state.scale = scale;
     if (state.viewPending) {
       state.viewPending = false;
-      const from = timeline.window.end - DEFAULT_WINDOW_MS;
-      const startFraction = from > timeline.window.start ? scale.map(from) : 0;
       state.follow = true;
-      state.followSpan = Math.max(MIN_VIEW, 1 - startFraction);
+      state.followMs = DEFAULT_WINDOW_MS;
       state.anchor = null;
     }
     if (state.follow) {
-      const span = Math.min(1, Math.max(MIN_VIEW, state.followSpan ?? 1));
+      const width = state.followMs;
+      const span = width == null ? 1 : spanForDuration(scale, width);
       state.view = { start: 1 - span, end: 1 };
     } else if (state.anchor) {
       state.view = { start: scale.map(state.anchor.from), end: scale.map(state.anchor.to) };
@@ -2405,7 +2435,12 @@ ${GUEST_UI_LOOK_CSS}`;
     const visible = groups.filter((group) => (byLane.get(group.key) || []).length);
     for (const stray of dom.lanes.querySelectorAll('[data-note="state"]')) stray.remove();
     if (dom.count) {
-      dom.count.textContent = [strings.lanes(visible.length), narrow ? null : strings.segments(segments.length)].filter(Boolean).join(" \xB7 ");
+      const visibleMs = Math.abs(scale.unmap(viewTo) - scale.unmap(viewFrom));
+      dom.count.textContent = [
+        fmtWindow(visibleMs),
+        strings.lanes(visible.length),
+        narrow ? null : strings.segments(segments.length)
+      ].filter(Boolean).join(" \xB7 ");
     }
     const zoom = viewZoom();
     dom.lanes.classList.toggle("zoomed", zoom > 1.02);
