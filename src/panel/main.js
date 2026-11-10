@@ -40,6 +40,8 @@ const STRINGS = {
     failed: (status, message) => `Service ${status}: ${message}`,
     serviceDown: 'The extension service is not answering. Open Settings → Extensions and reload it.',
     running: 'running',
+    stalled: 'no progress for minutes',
+    stalledShort: 'stalled',
     prompt: 'prompt',
     time: 'Time',
     duration: 'Duration',
@@ -87,6 +89,8 @@ const STRINGS = {
     failed: (status, message) => `Dienst ${status}: ${message}`,
     serviceDown: 'Der Erweiterungsdienst antwortet nicht. Einstellungen → Extensions → neu laden.',
     running: 'läuft',
+    stalled: 'seit Minuten kein Fortschritt',
+    stalledShort: 'hängt',
     prompt: 'Prompt',
     time: 'Zeit',
     duration: 'Dauer',
@@ -125,6 +129,7 @@ function barMetrics() {
 }
 const GAP_MS = 15000;
 const POLL_MS = 1500;
+const STALL_POLL_MS = 15000;
 
 const host = connectHost();
 const dom = {
@@ -606,11 +611,20 @@ async function load({ fresh = false } = {}) {
  * root is idle while a child keeps writing. Gating the poll on the root alone
  * froze those lanes on the snapshot taken when the parent stopped.
  */
+function workingLanes() {
+  return (state.timeline?.lanes || []).filter((lane) => lane.status === 'working');
+}
+
 function isBusy() {
-  if (state.session?.busy) return true;
-  const lanes = state.timeline?.lanes || [];
-  if (lanes.length) return lanes.some((lane) => lane.status === 'working');
-  return state.timeline?.session?.status === 'working';
+  const working = workingLanes();
+  if (working.length) return working.some((lane) => !lane.stalled);
+  return Boolean(state.session?.busy);
+}
+
+/** Busy, but nothing has arrived for minutes: a run that died mid-stream. */
+function isStalled() {
+  const working = workingLanes();
+  return working.length > 0 && working.every((lane) => lane.stalled);
 }
 
 function schedule() {
@@ -619,11 +633,13 @@ function schedule() {
     state.timer = null;
   }
   if (!state.session?.id) return;
-  if (!isBusy()) return;
+  // A stalled tree still gets asked, just rarely: it may revive.
+  const delay = isBusy() ? POLL_MS : isStalled() ? STALL_POLL_MS : 0;
+  if (!delay) return;
   state.timer = setTimeout(() => {
     state.timer = null;
     load();
-  }, POLL_MS);
+  }, delay);
 }
 
 function setSession(session) {
@@ -661,8 +677,8 @@ function render() {
   const session = state.session;
   const timeline = state.timeline;
 
-  dom.status.className = `dot ${isBusy() ? 'working' : 'idle'}`;
-  dom.status.title = isBusy() ? strings.running : '';
+  dom.status.className = `dot ${isBusy() ? 'working' : isStalled() ? 'stalled' : 'idle'}`;
+  dom.status.title = isBusy() ? strings.running : isStalled() ? strings.stalled : '';
   dom.agent.textContent = session?.agent || timeline?.session?.agent || '—';
   dom.title.textContent = session?.title || '';
   dom.title.title = session?.title || '';
@@ -848,7 +864,7 @@ function render() {
         group.models.join(', '),
         group.sessions.length > 1 ? group.sessions.map((lane) => lane.title).join(' · ') : group.sessions[0]?.title,
       ].filter(Boolean).join(' — ');
-      row.name.innerHTML = `${group.depth ? `<span class="depth">${'·'.repeat(Math.min(group.depth, 4))} </span>` : ''}${esc(group.agent)}${group.sessions.length > 1 ? `<span class="nb">×${group.sessions.length}</span>` : ''}`;
+      row.name.innerHTML = `${group.depth ? `<span class="depth">${'·'.repeat(Math.min(group.depth, 4))} </span>` : ''}${esc(group.agent)}${group.sessions.length > 1 ? `<span class="nb">×${group.sessions.length}</span>` : ''}${group.sessions.some((lane) => lane.stalled) ? `<span class="nb warn">${esc(strings.stalledShort)}</span>` : ''}`;
 
       const track = row.track;
       track.style.height = `${rows.length * rowHeight + 2}px`;
@@ -1408,6 +1424,8 @@ window.addEventListener('resize', () => {
 });
 
 render();
+
+
 
 
 

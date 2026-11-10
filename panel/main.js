@@ -1854,6 +1854,8 @@ ${GUEST_UI_LOOK_CSS}`;
       failed: (status, message) => `Service ${status}: ${message}`,
       serviceDown: "The extension service is not answering. Open Settings \u2192 Extensions and reload it.",
       running: "running",
+      stalled: "no progress for minutes",
+      stalledShort: "stalled",
       prompt: "prompt",
       time: "Time",
       duration: "Duration",
@@ -1901,6 +1903,8 @@ ${GUEST_UI_LOOK_CSS}`;
       failed: (status, message) => `Dienst ${status}: ${message}`,
       serviceDown: "Der Erweiterungsdienst antwortet nicht. Einstellungen \u2192 Extensions \u2192 neu laden.",
       running: "l\xE4uft",
+      stalled: "seit Minuten kein Fortschritt",
+      stalledShort: "h\xE4ngt",
       prompt: "Prompt",
       time: "Zeit",
       duration: "Dauer",
@@ -1930,6 +1934,7 @@ ${GUEST_UI_LOOK_CSS}`;
   }
   var GAP_MS = 15e3;
   var POLL_MS = 1500;
+  var STALL_POLL_MS = 15e3;
   var host = connectHost();
   var dom = {
     status: byId("status"),
@@ -2304,11 +2309,17 @@ ${GUEST_UI_LOOK_CSS}`;
       schedule();
     }
   }
+  function workingLanes() {
+    return (state.timeline?.lanes || []).filter((lane) => lane.status === "working");
+  }
   function isBusy() {
-    if (state.session?.busy) return true;
-    const lanes = state.timeline?.lanes || [];
-    if (lanes.length) return lanes.some((lane) => lane.status === "working");
-    return state.timeline?.session?.status === "working";
+    const working = workingLanes();
+    if (working.length) return working.some((lane) => !lane.stalled);
+    return Boolean(state.session?.busy);
+  }
+  function isStalled() {
+    const working = workingLanes();
+    return working.length > 0 && working.every((lane) => lane.stalled);
   }
   function schedule() {
     if (state.timer) {
@@ -2316,11 +2327,12 @@ ${GUEST_UI_LOOK_CSS}`;
       state.timer = null;
     }
     if (!state.session?.id) return;
-    if (!isBusy()) return;
+    const delay = isBusy() ? POLL_MS : isStalled() ? STALL_POLL_MS : 0;
+    if (!delay) return;
     state.timer = setTimeout(() => {
       state.timer = null;
       load();
-    }, POLL_MS);
+    }, delay);
   }
   function setSession(session) {
     const previous = state.session?.id || null;
@@ -2352,8 +2364,8 @@ ${GUEST_UI_LOOK_CSS}`;
     const strings = t();
     const session = state.session;
     const timeline = state.timeline;
-    dom.status.className = `dot ${isBusy() ? "working" : "idle"}`;
-    dom.status.title = isBusy() ? strings.running : "";
+    dom.status.className = `dot ${isBusy() ? "working" : isStalled() ? "stalled" : "idle"}`;
+    dom.status.title = isBusy() ? strings.running : isStalled() ? strings.stalled : "";
     dom.agent.textContent = session?.agent || timeline?.session?.agent || "\u2014";
     dom.title.textContent = session?.title || "";
     dom.title.title = session?.title || "";
@@ -2497,7 +2509,7 @@ ${GUEST_UI_LOOK_CSS}`;
           group.models.join(", "),
           group.sessions.length > 1 ? group.sessions.map((lane) => lane.title).join(" \xB7 ") : group.sessions[0]?.title
         ].filter(Boolean).join(" \u2014 ");
-        row.name.innerHTML = `${group.depth ? `<span class="depth">${"\xB7".repeat(Math.min(group.depth, 4))} </span>` : ""}${esc(group.agent)}${group.sessions.length > 1 ? `<span class="nb">\xD7${group.sessions.length}</span>` : ""}`;
+        row.name.innerHTML = `${group.depth ? `<span class="depth">${"\xB7".repeat(Math.min(group.depth, 4))} </span>` : ""}${esc(group.agent)}${group.sessions.length > 1 ? `<span class="nb">\xD7${group.sessions.length}</span>` : ""}${group.sessions.some((lane) => lane.stalled) ? `<span class="nb warn">${esc(strings.stalledShort)}</span>` : ""}`;
         const track = row.track;
         track.style.height = `${rows.length * rowHeight + 2}px`;
         const cutsKey = cuts.map((cut) => cut.at.toFixed(3)).join(",");

@@ -23,6 +23,8 @@ const MESSAGES_PER_LANE = 120;
 const MAX_MESSAGES_PER_LANE = 200;
 const PREVIEW = 240;
 const CACHE_MS = 1200;
+/** A busy lane with nothing new for this long is treated as stalled, not working. */
+const STALL_MS = 3 * 60 * 1000;
 const cache = new Map();
 
 if (!PORT || !TOKEN) {
@@ -279,12 +281,25 @@ async function buildTimeline(sessionId, limit = MESSAGES_PER_LANE) {
     if (messages.length >= limit) partial = true;
     let model = modelLabel(session);
     let count = 0;
+    let activity = null;
+    const note = (value) => {
+      if (typeof value === 'number' && Number.isFinite(value) && (activity == null || value > activity)) activity = value;
+    };
     for (const message of messages) {
       if (message.model?.id) model = `${message.model.providerID || '?'}/${message.model.id}${message.model.variant ? '#' + message.model.variant : ''}`;
+      note(message.time?.created);
+      note(message.time?.streamed);
+      note(message.time?.completed);
+      for (const part of Array.isArray(message.content) ? message.content : []) {
+        note(part.time?.created);
+        note(part.time?.ran);
+        note(part.time?.completed);
+      }
       const laneSegments = segmentsOfMessage(session.id, message);
       count += laneSegments.length;
       segments.push(...laneSegments);
     }
+    const status = statusOf(session);
     lanes.push({
       id: session.id,
       parentId: session.parentID || null,
@@ -292,8 +307,16 @@ async function buildTimeline(sessionId, limit = MESSAGES_PER_LANE) {
       agent: session.agent || '?',
       title: session.title || session.id,
       model,
-      status: statusOf(session),
+      status,
       updated: session.time?.updated || null,
+      /** Newest timestamp anywhere in the lane; a run that died leaves this behind. */
+      activity,
+      /**
+       * Busy but nothing new for a while: OpenCode keeps a session busy when a
+       * stream is cut mid-tool (a tool part stuck in `streaming`), so the run
+       * never finishes and the lane would claim to be working forever.
+       */
+      stalled: status === 'working' && activity != null && Date.now() - activity > STALL_MS,
       segments: count,
     });
   }

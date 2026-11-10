@@ -39,6 +39,7 @@
       .top .title { color: var(--oc-muted, #9a9aa8); font-size: 0.94em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 1; min-width: 0; }
       .dot { width: 0.45em; height: 0.45em; border-radius: 50%; flex: none; background: var(--oc-muted, #9a9aa8); }
       .dot.working { background: var(--oc-success, #3fb950); box-shadow: 0 0 0.35em color-mix(in srgb, var(--oc-success, #3fb950) 70%, transparent); }
+      .dot.stalled { background: var(--oc-warning, #d29922); }
       .icon {
         flex: none; background: transparent; border: 1px solid transparent; color: var(--oc-muted, #9a9aa8);
         border-radius: var(--oc-radius, 6px); font: inherit; font-size: 0.82em; line-height: 1; padding: 0.25em 0.4em; cursor: pointer;
@@ -83,6 +84,7 @@
       .lane.root .name { color: var(--oc-fg); font-weight: 600; }
       .lane .name .depth { opacity: 0.55; }
       .lane .name .nb { opacity: 0.62; margin-left: 0.16em; font-size: 0.9em; }
+      .lane .name .nb.warn { opacity: 1; color: var(--oc-warning-text, var(--oc-warning, #d29922)); }
       .track { position: relative; width: 100%; touch-action: none; }
 
       .seg {
