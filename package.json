@@ -1,0 +1,36 @@
+{
+  "name": "openchamber-agent-timeline",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "license": "MIT",
+  "description": "Swimlane timeline of the open chat: one lane per agent level, segments for reasoning and tool calls.",
+  "openchamber": {
+    "apiVersion": 1,
+    "engines": {
+      "openchamber": ">=2.5.0"
+    },
+    "contributes": {
+      "panel": {
+        "id": "agent-timeline",
+        "name": "Agent timeline",
+        "icon": "icon.svg",
+        "entry": "panel/index.html"
+      },
+      "page": true,
+      "service": {
+        "entry": "service/main.js",
+        "runtime": "host",
+        "provides": ["opencode"]
+      }
+    }
+  },
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "dev": "node scripts/build.mjs && node dev/serve.mjs"
+  },
+  "devDependencies": {
+    "@openchamber/sdk": "^2.7.0",
+    "esbuild": "^0.25.0"
+  }
+}

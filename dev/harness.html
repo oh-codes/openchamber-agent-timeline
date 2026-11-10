@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="utf-8" />
+    <title>Agent timeline · harness</title>
+    <style>
+      body { margin: 0; background: #0d0d11; color: #a4a4b4; font: 13px system-ui, sans-serif; }
+      .row { display: flex; gap: 16px; padding: 16px; align-items: flex-start; }
+      .rail { width: 340px; height: 760px; flex: none; border-radius: 10px; overflow: hidden; box-shadow: 0 0 0 1px #26262f; }
+      .wide { flex: 1; height: 760px; border-radius: 10px; overflow: hidden; box-shadow: 0 0 0 1px #26262f; }
+      iframe { width: 100%; height: 100%; border: 0; display: block; background: #141419; }
+      h2 { font-size: 11px; letter-spacing: .08em; text-transform: uppercase; margin: 0 0 6px; color: #6f6f80; }
+      .hint { padding: 16px; color: #8f8fa1; font-size: 13px; }
+    </style>
+  </head>
+  <body>
+    <div class="row">
+      <div>
+        <h2>Rail · 340 px</h2>
+        <div class="rail"><iframe id="rail"></iframe></div>
+      </div>
+      <div style="flex:1">
+        <h2>Page · full width</h2>
+        <div class="wide"><iframe id="page"></iframe></div>
+      </div>
+    </div>
+    <script>
+      // Stand-in host for `npm run dev`: speaks the SDK wire protocol against
+      // the panel and answers service-request through /svc (see dev/serve.mjs).
+      const theme = {
+        mode: 'dark',
+        tokens: {
+          background: '#141419', elevated: '#1b1b22', foreground: '#e6e6ef', muted: '#8f8fa1', subtle: '#5d5d6d',
+          border: '#2b2b36', hover: '#22222b', selection: '#2b2b38', focus: '#6c8cff', primary: '#6c8cff',
+          mutedSurface: '#1a1a21', elevatedForeground: '#f0f0f7', active: '#2f2f3c', selectionForeground: '#ffffff',
+          primaryForeground: '#0d0d11', primaryText: '#93a9ff', successText: '#7ee2a8', warningText: '#f0c674',
+          errorText: '#ff8f8a', infoText: '#8fc4ff', success: '#3fb950', warning: '#d29922', error: '#f85149',
+          info: '#58a6ff', font: 'system-ui, -apple-system, Segoe UI, sans-serif',
+          mono: 'ui-monospace, SFMono-Regular, Consolas, monospace', radius: '8px',
+        },
+      };
+
+      (async () => {
+        const params = new URLSearchParams(location.search);
+        let sessionId = params.get('session');
+        let session = null;
+
+        if (!sessionId) {
+          const list = await fetch('/sessions').then((r) => r.json()).catch(() => []);
+          if (!list.length) {
+            document.body.innerHTML = '<p class="hint">No session found. Pass <code>?session=&lt;id&gt;</code>.</p>';
+            return;
+          }
+          sessionId = list[0].id;
+          session = list[0];
+        }
+
+        const context = {
+          theme,
+          locale: 'de',
+          directory: session?.directory || 'E:\\Coding\\Openchamber_team',
+          session: {
+            id: sessionId,
+            title: session?.title || sessionId,
+            busy: Boolean(session?.busy),
+            model: session?.model || undefined,
+            agent: session?.agent || undefined,
+          },
+          surface: 'panel',
+          connection: { connected: false, account: '' },
+          settings: {},
+          item: null,
+        };
+
+        const frames = [document.getElementById('rail'), document.getElementById('page')];
+
+        for (const frame of frames) {
+          window.addEventListener('message', async (event) => {
+            if (event.source !== frame.contentWindow) return;
+            const message = event.data;
+            if (!message || message.channel !== 'openchamber.sdk' || message.v !== 1) return;
+
+            if (message.type === 'hello') {
+              frame.contentWindow.postMessage({ channel: 'openchamber.sdk', v: 1, type: 'ready', payload: context }, '*');
+              return;
+            }
+            if (message.type === 'service-request') {
+              const query = new URLSearchParams(message.payload.query || {});
+              const url = '/svc' + message.payload.path + (query.toString() ? '?' + query.toString() : '');
+              try {
+                const response = await fetch(url);
+                const body = await response.text();
+                frame.contentWindow.postMessage(
+                  { channel: 'openchamber.sdk', v: 1, type: 'result', id: message.id, ok: true, payload: { status: response.status, body } },
+                  '*',
+                );
+              } catch (error) {
+                frame.contentWindow.postMessage(
+                  { channel: 'openchamber.sdk', v: 1, type: 'result', id: message.id, ok: false, error: String(error), code: 'SERVICE_FAILED' },
+                  '*',
+                );
+              }
+            }
+          });
+        }
+
+        for (const frame of frames) frame.src = '/panel/index.html';
+
+        // The CDP click path in the dev Chrome hangs on iframes, so these run
+        // the handlers from the parent document instead.
+        if (params.has('clock')) {
+          setTimeout(() => {
+            for (const frame of frames) frame.contentDocument?.querySelector('button[data-mode="time"]')?.click();
+          }, 2200);
+        }
+        if (params.has('click')) {
+          setTimeout(() => {
+            for (const frame of frames) {
+              frame.contentDocument?.querySelector('.seg.tool, .seg.reasoning')?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+            }
+          }, 2500);
+        }
+      })();
+    </script>
+  </body>
+</html>

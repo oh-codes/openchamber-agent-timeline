@@ -1,0 +1,5 @@
+/node_modules/
+/panel/
+*.log
+.DS_Store
+.playwright-mcp/
