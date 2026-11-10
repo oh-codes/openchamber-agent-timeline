@@ -11,7 +11,7 @@ Subagents get their own lane under the root, so a run that fans out to `coder`, 
 | | |
 |---|---|
 | **Lane** | one agent level. The name sits above its track; subagents are indented with `·`, the root is bold. Two sessions of the same agent at the same level share a lane and show as `coder ×2`. |
-| **Bar** | thinking (thin, blue), tool (solid, blue / yellow while running / red on error), text (green), prompt (grey). |
+| **Bar** | thinking (thin, blue), tool (solid, blue / yellow while running / red on error), text (green), prompt (grey). Anything shorter than 6 px is still drawn 6 px wide, so a 0 ms prompt or a 40 ms text part stays visible and clickable. |
 | **Waiting** | hatched, not filled: a `subagent` call waiting for a child, a `question` waiting for you. The tooltip and the drawer name the child agent or repeat the question. |
 | **Overlap** | segments that collide get a sub-row inside their lane instead of covering each other. |
 | **active** | idle stretches longer than 15 s are compressed, so the work fills the width. |

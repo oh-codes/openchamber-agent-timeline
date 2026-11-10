@@ -86,8 +86,13 @@
       .track { position: relative; width: 100%; touch-action: none; }
 
       .seg {
-        position: absolute; border-radius: 2px; cursor: pointer; min-width: 2px;
+        position: absolute; border-radius: 2px; cursor: pointer; min-width: 6px;
         transition: filter 90ms linear;
+      }
+      /* A prompt or a 40 ms text part would be a hairline; the minimum width above
+         keeps it a visible tick, and this padding adds a little room around it. */
+      .seg::after {
+        content: ''; position: absolute; inset: -2px -3px; border-radius: 4px;
       }
       .seg:hover { filter: brightness(1.4); }
       .seg.sel { outline: 1px solid var(--oc-fg); outline-offset: 1px; }
