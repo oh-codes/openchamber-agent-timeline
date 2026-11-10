@@ -1158,8 +1158,12 @@ function renderDetail(detail, segment) {
   if (message.tokens) {
     const tokens = ['input', 'output', 'reasoning'].filter((key) => typeof message.tokens[key] === 'number').map((key) => `${key} ${message.tokens[key]}`);
     // Plenty of OpenAI-compatible servers send reasoning text but no reasoning
-    // token count; saying "0" next to visible thinking would be a lie.
-    if (message.tokens.reasoning === 0 && part?.text && part.type === 'reasoning') tokens.push(strings.reasoningNotReported);
+    // token count; saying "0" next to visible thinking would be a lie. The
+    // configured effort is known, though: it is the variant on the message.
+    if (message.tokens.reasoning === 0 && part?.text && part.type === 'reasoning') {
+      const variant = message.model?.variant;
+      tokens.push(variant && variant !== 'default' ? `${strings.reasoningNotReported} (${variant})` : strings.reasoningNotReported);
+    }
     if (tokens.length) facts.push([strings.tokens, tokens.join(' · ')]);
   }
 

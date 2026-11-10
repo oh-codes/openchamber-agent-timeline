@@ -2748,7 +2748,10 @@ ${GUEST_UI_LOOK_CSS}`;
     }
     if (message.tokens) {
       const tokens = ["input", "output", "reasoning"].filter((key) => typeof message.tokens[key] === "number").map((key) => `${key} ${message.tokens[key]}`);
-      if (message.tokens.reasoning === 0 && part?.text && part.type === "reasoning") tokens.push(strings.reasoningNotReported);
+      if (message.tokens.reasoning === 0 && part?.text && part.type === "reasoning") {
+        const variant = message.model?.variant;
+        tokens.push(variant && variant !== "default" ? `${strings.reasoningNotReported} (${variant})` : strings.reasoningNotReported);
+      }
       if (tokens.length) facts.push([strings.tokens, tokens.join(" \xB7 ")]);
     }
     const list = document.createElement("dl");
