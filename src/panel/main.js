@@ -229,7 +229,17 @@ function packRows(segments) {
 /* --------------------------------------------------------------- fetching */
 
 async function request(path, query) {
-  const result = await host.serviceRequest({ method: 'GET', path, query });
+  let result;
+  try {
+    result = await host.serviceRequest({ method: 'GET', path, query });
+  } catch (error) {
+    // The host answers with a code instead of a response when the service
+    // process is down; that is not something the user can read as a number.
+    const down = error?.code === 'SERVICE_FAILED' || error?.code === 'NO_SERVICE' || error?.code === 'DISABLED';
+    const wrapped = new Error(down ? t().serviceDown : error?.message || String(error));
+    wrapped.status = 0;
+    throw wrapped;
+  }
   let body = null;
   try {
     body = JSON.parse(result.body || 'null');
@@ -237,8 +247,7 @@ async function request(path, query) {
     body = { error: 'unparseable response' };
   }
   if (result.status !== 200) {
-    const message = body?.error || (result.status === 0 ? t().serviceDown : 'request failed');
-    const error = new Error(message);
+    const error = new Error(body?.error || 'request failed');
     error.status = result.status;
     throw error;
   }
@@ -259,7 +268,20 @@ async function load({ fresh = false } = {}) {
   state.seq += 1;
   const seq = state.seq;
   try {
-    const timeline = await request('/timeline', fresh ? { session: session.id, fresh: '1' } : { session: session.id });
+    // The first request of a cold panel starts the service process; the host
+    // says ready once /health answers, so a first attempt can still miss.
+    // An idle session polls nothing, so retry here instead of leaving an error.
+    let timeline = null;
+    for (let attempt = 1; ; attempt++) {
+      try {
+        timeline = await request('/timeline', fresh ? { session: session.id, fresh: '1' } : { session: session.id });
+        break;
+      } catch (error) {
+        if (attempt >= 3 || seq !== state.seq) throw error;
+        await new Promise((resolve) => setTimeout(resolve, attempt * 700));
+        if (seq !== state.seq) return;
+      }
+    }
     if (seq !== state.seq) return;
     state.timeline = timeline;
     state.error = null;
