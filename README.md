@@ -15,9 +15,9 @@ subsessions*, each with its own transcript. There is no picture of the run as a
 whole: which agents were active at the same time, which one blocked the others,
 which one is still going.
 
-That is the whole point of this extension. It draws **up to 24 lanes, 4 levels
-deep**, subagents indented under the agent that spawned them, and two sessions
-of the same agent as one lane (`coder ×4`).
+That is the whole point of this extension. It draws every agent on its own
+lane, several levels deep, subagents indented under the agent that spawned them,
+and two sessions of the same agent as one lane (`coder ×4`).
 
 ## Reading it
 
