@@ -114,7 +114,11 @@ const server = http.createServer(async (req, res) => {
     res.writeHead(404).end('not found');
     return;
   }
-  res.writeHead(200, { 'content-type': TYPES[path.extname(file)] || 'application/octet-stream' });
+  res.writeHead(200, {
+    'content-type': TYPES[path.extname(file)] || 'application/octet-stream',
+    // Dev loop: a cached harness page hides every change to it.
+    'cache-control': 'no-store',
+  });
   createReadStream(file).pipe(res);
 });
 server.listen(45997, '127.0.0.1', () => {

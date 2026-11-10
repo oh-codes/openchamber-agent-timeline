@@ -6,14 +6,14 @@
     <style>
       body { margin: 0; background: #0d0d11; color: #a4a4b4; font: 13px system-ui, sans-serif; }
       .row { display: flex; gap: 16px; padding: 16px; align-items: flex-start; }
-      .rail { width: 340px; height: 760px; flex: none; border-radius: 10px; overflow: hidden; box-shadow: 0 0 0 1px #26262f; }
+      .rail { width: var(--rail, 340px); height: 760px; flex: none; border-radius: 10px; overflow: hidden; box-shadow: 0 0 0 1px #26262f; }
       .wide { flex: 1; height: 760px; border-radius: 10px; overflow: hidden; box-shadow: 0 0 0 1px #26262f; }
       iframe { width: 100%; height: 100%; border: 0; display: block; background: #141419; }
       h2 { font-size: 11px; letter-spacing: .08em; text-transform: uppercase; margin: 0 0 6px; color: #6f6f80; }
       .hint { padding: 16px; color: #8f8fa1; font-size: 13px; }
     </style>
   </head>
-  <body>
+  <body style="--rail: 320px">
     <div class="row">
       <div>
         <h2>Rail · 340 px</h2>
@@ -106,6 +106,15 @@
 
         for (const frame of frames) frame.src = '/panel/index.html';
 
+        // Wait for the bars instead of guessing when the first fetch lands.
+        const waitForBars = (run) => {
+          const attempt = (left) => {
+            if (frames.every(run) || left <= 0) return;
+            setTimeout(() => attempt(left - 1), 300);
+          };
+          attempt(40);
+        };
+
         // The CDP click path in the dev Chrome hangs on iframes, so these run
         // the handlers from the parent document instead.
         if (params.has('clock')) {
@@ -114,38 +123,53 @@
           }, 2200);
         }
         if (params.has('zoom')) {
-          const times = Number(params.get('zoom')) || 2;
-          setTimeout(() => {
-            for (const frame of frames) {
-              const button = frame.contentDocument?.querySelector('[data-zoom="in"]');
-              for (let i = 0; i < Math.min(12, times); i++) button?.click();
-            }
-          }, 2400);
+          const times = Math.min(12, Number(params.get('zoom')) || 2);
+          waitForBars((frame) => {
+            const doc = frame.contentDocument;
+            // The button exists in the markup long before the script attaches its
+            // listener: wait for a rendered bar, which means the panel is live.
+            if (!doc?.querySelector('.seg')) return false;
+            const button = doc.querySelector('[data-zoom="in"]');
+            if (!button) return false;
+            for (let i = 0; i < times; i++) button.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+            return true;
+          });
         }
+
         if (params.has('pan')) {
-          setTimeout(() => {
-            for (const frame of frames) {
-              const doc = frame.contentDocument;
-              const track = doc?.querySelector('.track');
-              if (!track) continue;
-              const rect = track.getBoundingClientRect();
-              const y = rect.top + 6;
-              const send = (type, clientX) =>
-                track.dispatchEvent(new PointerEvent(type, { bubbles: true, pointerId: 1, button: 0, buttons: 1, clientX, clientY: y }));
-              send('pointerdown', rect.left + rect.width * 0.75);
-              for (let step = 1; step <= 6; step++) send('pointermove', rect.left + rect.width * (0.75 - step * 0.08));
-              send('pointerup', rect.left + rect.width * 0.27);
-            }
-          }, 2600);
+          waitForBars((frame) => {
+            const doc = frame.contentDocument;
+            const track = doc?.querySelector('.track');
+            if (!track) return false;
+            // Panning the whole span is a no-op: zoom in first.
+            const zoomIn = doc.querySelector('[data-zoom="in"]');
+            for (let i = 0; i < 2; i++) zoomIn?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+            const rect = track.getBoundingClientRect();
+            const y = rect.top + 6;
+            const send = (type, clientX) =>
+              track.dispatchEvent(new PointerEvent(type, { bubbles: true, pointerId: 1, button: 0, buttons: 1, clientX, clientY: y }));
+            send('pointerdown', rect.left + rect.width * 0.75);
+            for (let step = 1; step <= 6; step++) send('pointermove', rect.left + rect.width * (0.75 - step * 0.08));
+            send('pointerup', rect.left + rect.width * 0.27);
+            return true;
+          });
         }
         if (params.has('click')) {
-          setTimeout(() => {
-            for (const frame of frames) {
-              frame.contentDocument?.querySelector('.seg.tool, .seg.reasoning')?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-            }
-          }, 2500);
+          waitForBars((frame) => {
+            const bar = frame.contentDocument?.querySelector('.seg.tool, .seg.reasoning');
+            if (!bar) return false;
+            const rect = bar.getBoundingClientRect();
+            const at = { bubbles: true, pointerId: 1, button: 0, clientX: rect.left + 2, clientY: rect.top + 2 };
+            // A real press, not a bare click event: the click event alone hid the
+            // regression where pointer capture swallowed the click on a bar.
+            bar.dispatchEvent(new PointerEvent('pointerdown', { ...at, buttons: 1 }));
+            bar.dispatchEvent(new PointerEvent('pointerup', { ...at, buttons: 0 }));
+            bar.dispatchEvent(new MouseEvent('click', { bubbles: true, clientX: at.clientX, clientY: at.clientY }));
+            return true;
+          });
         }
       })();
     </script>
   </body>
 </html>
+

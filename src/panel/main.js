@@ -126,7 +126,7 @@ const state = {
   view: { start: 0, end: 1 },
   scale: null,
   /** A pan just moved the view; the click that follows must not open a segment. */
-  panned: false,
+  panEndedAt: 0,
 };
 
 const MIN_VIEW = 0.0008;
@@ -321,6 +321,9 @@ async function load({ fresh = false } = {}) {
   if (state.inflight) return;
   state.inflight = true;
   state.loading = !state.timeline;
+  // The first fetch of a chat takes seconds; without this the frame sits empty
+  // and looks like a broken panel rather than a loading one.
+  if (state.loading) render();
   state.seq += 1;
   const seq = state.seq;
   try {
@@ -492,6 +495,9 @@ function render() {
   }
 
   const visible = groups.filter((group) => (byLane.get(group.key) || []).length);
+  // Drop the loading/empty note: the lanes now carry the state. (syncChildren
+  // only recycles keyed nodes, so a leftover note would sit under the lanes.)
+  for (const stray of dom.lanes.querySelectorAll('[data-note="state"]')) stray.remove();
   if (dom.count) {
     dom.count.textContent = [
       strings.lanes(visible.length),
@@ -569,10 +575,7 @@ function render() {
           bar.className = 'seg';
           bar.addEventListener('click', () => {
             // A pan ends with a click on whatever was under the pointer.
-            if (state.panned) {
-              state.panned = false;
-              return;
-            }
+            if (performance.now() - state.panEndedAt < 300) return;
             const segment = state.byKey.get(barKey);
             if (segment) select(segment, bar);
           });
@@ -670,7 +673,9 @@ function note(text, isError = false) {
 function showNote(text, isError = false) {
   dom.axis.replaceChildren();
   dom.lanes.replaceChildren();
-  dom.lanes.append(note(text, isError));
+  const marker = note(text, isError);
+  marker.dataset.note = 'state';
+  dom.lanes.append(marker);
 }
 
 /* ----------------------------------------------------------------- detail */
@@ -804,9 +809,39 @@ dom.lanes.addEventListener(
   { passive: false },
 );
 
-// Drag to pan. The re-render runs once per frame, not once per pointer event.
+// Drag to pan. No pointer capture: it retargets pointerup to the container and
+// the click that follows then lands there instead of on the bar, which silently
+// killed the detail drawer. Listeners on window carry the drag instead.
 let drag = null;
 let panFrame = 0;
+
+function onPanMove(event) {
+  if (!drag) return;
+  const dx = event.clientX - drag.x;
+  drag.moved = Math.max(drag.moved, Math.abs(dx));
+  if (drag.moved < 4) return;
+  dom.lanes.classList.add('panning');
+  const shift = -(dx / drag.width) * drag.span;
+  const from = Math.min(Math.max(0, drag.from + shift), 1 - drag.span);
+  state.view = { start: from, end: from + drag.span };
+  if (panFrame) return;
+  panFrame = requestAnimationFrame(() => {
+    panFrame = 0;
+    render();
+  });
+}
+
+function endPan() {
+  window.removeEventListener('pointermove', onPanMove);
+  window.removeEventListener('pointerup', endPan);
+  window.removeEventListener('pointercancel', endPan);
+  dom.lanes.classList.remove('panning');
+  // Remember when a drag ended: the click that closes it must not open a segment,
+  // but the next deliberate click (well after this) must.
+  if (drag && drag.moved >= 4) state.panEndedAt = performance.now();
+  drag = null;
+}
+
 dom.lanes.addEventListener('pointerdown', (event) => {
   if (event.button !== 0) return;
   const track = event.target.closest('.track');
@@ -818,37 +853,10 @@ dom.lanes.addEventListener('pointerdown', (event) => {
     from: state.view.start,
     span: Math.max(MIN_VIEW, state.view.end - state.view.start),
   };
-  // Not every environment grants capture (a synthetic event cannot): the
-  // listeners sit on `.lanes` anyway, so this is a convenience, not a need.
-  try {
-    dom.lanes.setPointerCapture(event.pointerId);
-  } catch {
-    /* no capture: pointermove still arrives through the lanes container */
-  }
+  window.addEventListener('pointermove', onPanMove);
+  window.addEventListener('pointerup', endPan);
+  window.addEventListener('pointercancel', endPan);
 });
-dom.lanes.addEventListener('pointermove', (event) => {
-  if (!drag) return;
-  const dx = event.clientX - drag.x;
-  drag.moved = Math.max(drag.moved, Math.abs(dx));
-  if (drag.moved < 3) return;
-  dom.lanes.classList.add('panning');
-  const shift = -(dx / drag.width) * drag.span;
-  const from = Math.min(Math.max(0, drag.from + shift), 1 - drag.span);
-  state.view = { start: from, end: from + drag.span };
-  if (panFrame) return;
-  panFrame = requestAnimationFrame(() => {
-    panFrame = 0;
-    render();
-  });
-});
-const endDrag = () => {
-  if (!drag) return;
-  state.panned = drag.moved >= 3;
-  drag = null;
-  dom.lanes.classList.remove('panning');
-};
-dom.lanes.addEventListener('pointerup', endDrag);
-dom.lanes.addEventListener('pointercancel', endDrag);
 
 host.onReady((context) => {
   applyHostReady(context, document.documentElement);
@@ -884,3 +892,5 @@ window.addEventListener('resize', () => {
 });
 
 render();
+
+
