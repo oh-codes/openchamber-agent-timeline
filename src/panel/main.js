@@ -98,6 +98,21 @@ const STRINGS = {
 
 const ROW_H = 11;
 const BAR_H = 8;
+
+/**
+ * Row and bar height follow the panel width and the zoom.
+ *
+ * Fixed 8px bars read as hairlines in a wide page and stay tiny when zooming
+ * into a few minutes, so both the available width and the zoom factor thicken
+ * them, up to a cap.
+ */
+function barMetrics() {
+  const width = dom.lanes.clientWidth || 340;
+  const widthScale = 1 + clamp01((width - 300) / 700) * 0.9;
+  const zoomScale = 1 + Math.min(1.1, Math.log2(Math.max(1, viewZoom())) * 0.38);
+  const scale = Math.min(2.6, state.fontScale * widthScale * zoomScale);
+  return { row: Math.round(ROW_H * scale), bar: Math.max(6, Math.round(BAR_H * scale)) };
+}
 const GAP_MS = 15000;
 const POLL_MS = 1500;
 
@@ -655,8 +670,7 @@ function render() {
   }
   if (dom.zoom) dom.zoom.title = strings.zoomHint;
 
-  const rowHeight = Math.round(ROW_H * state.fontScale);
-  const barHeight = Math.max(6, Math.round(BAR_H * state.fontScale));
+  const { row: rowHeight, bar: barHeight } = barMetrics();
 
   syncChildren(
     dom.lanes,

@@ -1911,6 +1911,13 @@ ${GUEST_UI_LOOK_CSS}`;
   };
   var ROW_H = 11;
   var BAR_H = 8;
+  function barMetrics() {
+    const width = dom.lanes.clientWidth || 340;
+    const widthScale = 1 + clamp01((width - 300) / 700) * 0.9;
+    const zoomScale = 1 + Math.min(1.1, Math.log2(Math.max(1, viewZoom())) * 0.38);
+    const scale = Math.min(2.6, state.fontScale * widthScale * zoomScale);
+    return { row: Math.round(ROW_H * scale), bar: Math.max(6, Math.round(BAR_H * scale)) };
+  }
   var GAP_MS = 15e3;
   var POLL_MS = 1500;
   var host = connectHost();
@@ -2349,8 +2356,7 @@ ${GUEST_UI_LOOK_CSS}`;
       dom.zoomFit.textContent = `fit ${zoom.toFixed(1)}\xD7`;
     }
     if (dom.zoom) dom.zoom.title = strings.zoomHint;
-    const rowHeight = Math.round(ROW_H * state.fontScale);
-    const barHeight = Math.max(6, Math.round(BAR_H * state.fontScale));
+    const { row: rowHeight, bar: barHeight } = barMetrics();
     syncChildren(
       dom.lanes,
       visible.map((group) => group.key),
