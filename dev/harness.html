@@ -155,6 +155,16 @@
           });
         }
 
+        if (params.has('dbl')) {
+          waitForBars((frame) => {
+            const doc = frame.contentDocument;
+            const bars = doc?.querySelectorAll('.seg.tool, .seg.reasoning');
+            if (!bars || bars.length < 4) return false;
+            const bar = bars[Math.floor(bars.length / 2)];
+            bar.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+            return true;
+          });
+        }
         if (params.has('pan')) {
           waitForBars((frame) => {
             const doc = frame.contentDocument;
@@ -167,9 +177,27 @@
             const y = rect.top + 6;
             const send = (type, clientX) =>
               track.dispatchEvent(new PointerEvent(type, { bubbles: true, pointerId: 1, button: 0, buttons: 1, clientX, clientY: y }));
-            send('pointerdown', rect.left + rect.width * 0.75);
-            for (let step = 1; step <= 6; step++) send('pointermove', rect.left + rect.width * (0.75 - step * 0.08));
-            send('pointerup', rect.left + rect.width * 0.27);
+            // Drag rightwards: the window moves back into the past.
+            send('pointerdown', rect.left + rect.width * 0.25);
+            for (let step = 1; step <= 6; step++) send('pointermove', rect.left + rect.width * (0.25 + step * 0.08));
+            send('pointerup', rect.left + rect.width * 0.73);
+            return true;
+          });
+        }
+        if (params.has('edge')) {
+          const extraZoom = Number(params.get('edge')) || 0;
+          waitForBars((frame) => {
+            const doc = frame.contentDocument;
+            const map = doc?.querySelector('#map');
+            if (!map || !doc.querySelector('.seg')) return false;
+            // Click near the right end of the strip: the window jumps there and
+            // should then stay on the newest data.
+            const rect = map.getBoundingClientRect();
+            const at = { bubbles: true, pointerId: 1, button: 0, clientX: rect.right - 2, clientY: rect.top + 4 };
+            map.dispatchEvent(new PointerEvent('pointerdown', { ...at, buttons: 1 }));
+            map.dispatchEvent(new PointerEvent('pointerup', { ...at, buttons: 0 }));
+            const zoomIn = doc.querySelector('[data-zoom="in"]');
+            for (let i = 0; i < extraZoom; i++) zoomIn?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
             return true;
           });
         }
@@ -230,4 +258,6 @@
     </script>
   </body>
 </html>
+
+
 

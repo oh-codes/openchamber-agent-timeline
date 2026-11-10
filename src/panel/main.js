@@ -24,6 +24,7 @@ const STRINGS = {
     fontSize: 'Text size',
     fontHint: 'The host passes no interface size to extensions, so this is the panel’s own.',
     mapHint: 'Drag the window, or click the strip to jump.',
+    live: 'Follows the newest part',
     session: 'Session',
     lanes: (n) => `${n} lane${n === 1 ? '' : 's'}`,
     segments: (n) => `${n} segment${n === 1 ? '' : 's'}`,
@@ -62,6 +63,7 @@ const STRINGS = {
     fontSize: 'Textgröße',
     fontHint: 'Der Host übergibt Erweiterungen keine Interface-Größe, das hier ist die eigene.',
     mapHint: 'Fenster ziehen oder in den Streifen klicken.',
+    live: 'folgt dem neuesten Teil',
     session: 'Session',
     lanes: (n) => `${n} Spur${n === 1 ? '' : 'en'}`,
     segments: (n) => `${n} Segment${n === 1 ? '' : 'e'}`,
@@ -136,6 +138,9 @@ const state = {
   view: { start: 0, end: 1 },
   /** The same slice in wall-clock ms, so a growing span cannot move it. */
   anchor: null,
+  /** The slice touches the newest end: keep it there and let it grow. */
+  follow: true,
+  followSpan: 1,
   scale: null,
   /** Text scale on top of the host's root size (which carries no size setting). */
   fontScale: 1,
@@ -281,11 +286,23 @@ function setViewFrac(start, end) {
  * The view is stored as a fraction of the total span, and the span grows while
  * the chat works. Without this anchor the same fraction covered different
  * times after every poll, so a section the user picked drifted away.
+ *
+ * A window that touches the newest end is the exception: there the user wants
+ * to stay attached to the end, so it keeps its width and follows instead.
  */
 function anchorView() {
   if (!state.scale) return;
+  const span = state.view.end - state.view.start;
+  if (state.view.end > 0.995) {
+    state.follow = true;
+    state.followSpan = span;
+    state.anchor = null;
+    return;
+  }
+  state.follow = false;
+  state.followSpan = null;
   // The whole span is not a place: following the data is what it means.
-  if (state.view.end - state.view.start > 0.999) {
+  if (span > 0.999) {
     state.anchor = null;
     return;
   }
@@ -297,10 +314,19 @@ function anchorView() {
 
 /** Zoom around a point given as a fraction of the *current* view. */
 function zoomAt(fraction, factor) {
+  const wasFollowing = state.follow;
   const { start, end } = state.view;
   const span = Math.max(MIN_VIEW, end - start);
-  const anchor = start + fraction * span;
   const next = Math.min(1, Math.max(MIN_VIEW, span * factor));
+  if (wasFollowing) {
+    // Zooming while the window hangs on the newest end should stay there:
+    // "show me the last minutes, closer" is what this gesture means.
+    const from = Math.max(0, 1 - next);
+    state.view = { start: from, end: from + next };
+    anchorView();
+    return;
+  }
+  const anchor = start + fraction * span;
   setViewFrac(anchor - fraction * next, anchor - fraction * next + next);
 }
 
@@ -315,6 +341,8 @@ function zoomToSegment(segment) {
 function resetView() {
   state.view = { start: 0, end: 1 };
   // Back to the whole span: follow the data again instead of staying pinned.
+  state.follow = true;
+  state.followSpan = 1;
   state.anchor = null;
 }
 
@@ -369,6 +397,8 @@ function drawMap(scale, segments) {
     dom.mapWin.hidden = false;
     dom.mapWin.style.left = `${(state.view.start * 100).toFixed(3)}%`;
     dom.mapWin.style.width = `${(span * 100).toFixed(3)}%`;
+    dom.mapWin.classList.toggle('live', state.follow);
+    dom.mapWin.title = state.follow ? t().live : '';
   }
 }
 
@@ -529,8 +559,12 @@ function render() {
   state.scale = scale;
 
   // A pinned slice is re-derived from its times: the span it was a fraction of
-  // has probably grown since the last poll.
-  if (state.anchor) {
+  // has probably grown since the last poll. A slice at the newest end instead
+  // keeps its width and moves with the end.
+  if (state.follow) {
+    const span = Math.min(1, Math.max(MIN_VIEW, state.followSpan ?? 1));
+    state.view = { start: 1 - span, end: 1 };
+  } else if (state.anchor) {
     state.view = { start: scale.map(state.anchor.from), end: scale.map(state.anchor.to) };
   }
 
@@ -933,6 +967,7 @@ function onPanMove(event) {
   const from = Math.min(Math.max(0, drag.from + shift), 1 - drag.span);
   state.view = { start: from, end: from + drag.span };
   anchorView();
+  dom.drawerWhat.textContent = 'M' + Math.round(drag.moved) + ' ' + from.toFixed(2) + ' f' + (state.follow?1:0);
   if (panFrame) return;
   panFrame = requestAnimationFrame(() => {
     panFrame = 0;
@@ -962,6 +997,7 @@ dom.lanes.addEventListener('pointerdown', (event) => {
     from: state.view.start,
     span: Math.max(MIN_VIEW, state.view.end - state.view.start),
   };
+  dom.drawerWhat.textContent = 'D ' + state.view.start.toFixed(2) + '-' + state.view.end.toFixed(2);
   window.addEventListener('pointermove', onPanMove);
   window.addEventListener('pointerup', endPan);
   window.addEventListener('pointercancel', endPan);
@@ -1083,5 +1119,12 @@ window.addEventListener('resize', () => {
 });
 
 render();
+
+
+
+
+
+
+
 
 
