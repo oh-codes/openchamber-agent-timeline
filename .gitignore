@@ -2,3 +2,6 @@
 *.log
 .DS_Store
 .playwright-mcp/
+
+# test screenshots, keep the ones in docs/
+/*.png
