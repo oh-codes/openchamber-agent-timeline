@@ -84,6 +84,25 @@
               frame.contentWindow.postMessage({ channel: 'openchamber.sdk', v: 1, type: 'ready', payload: context }, '*');
               return;
             }
+            if (message.type === 'storage') {
+              // Minimal guest storage so the panel's text size persists in dev too.
+              const read = () => { try { return JSON.parse(sessionStorage.getItem('guest-storage') || '{}'); } catch { return {}; } };
+              const store = {
+                has: (key) => key in read(),
+                get: (key) => read()[key],
+                set: (key, value) => sessionStorage.setItem('guest-storage', JSON.stringify({ ...read(), [key]: value })),
+                delete: (key) => { const all = read(); delete all[key]; sessionStorage.setItem('guest-storage', JSON.stringify(all)); },
+                keys: () => Object.keys(read()),
+              };
+              const { op, key, value } = message.payload || {};
+              let result = { storage: true, op };
+              if (op === 'get') result = store.has(key) ? { ...result, found: true, value: store.get(key) } : { ...result, found: false };
+              else if (op === 'set') store.set(key, value);
+              else if (op === 'delete') store.delete(key);
+              else if (op === 'keys') result = { ...result, keys: [...store.keys()] };
+              frame.contentWindow.postMessage({ channel: 'openchamber.sdk', v: 1, type: 'result', id: message.id, ok: true, payload: result }, '*');
+              return;
+            }
             if (message.type === 'service-request') {
               const query = new URLSearchParams(message.payload.query || {});
               const url = '/svc' + message.payload.path + (query.toString() ? '?' + query.toString() : '');
@@ -151,6 +170,35 @@
             send('pointerdown', rect.left + rect.width * 0.75);
             for (let step = 1; step <= 6; step++) send('pointermove', rect.left + rect.width * (0.75 - step * 0.08));
             send('pointerup', rect.left + rect.width * 0.27);
+            return true;
+          });
+        }
+        if (params.has('font')) {
+          const times = Math.min(5, Number(params.get('font')) || 1);
+          waitForBars((frame) => {
+            const doc = frame.contentDocument;
+            if (!doc?.querySelector('.seg')) return false;
+            const button = doc.querySelector('#font');
+            if (!button) return false;
+            for (let i = 0; i < times; i++) button.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+            return true;
+          });
+        }
+        if (params.has('mapdrag')) {
+          waitForBars((frame) => {
+            const doc = frame.contentDocument;
+            const map = doc?.querySelector('#map');
+            const win = doc?.querySelector('#map-win');
+            if (!map || !win || win.hidden) return false;
+            const rect = map.getBoundingClientRect();
+            const winRect = win.getBoundingClientRect();
+            const y = rect.top + rect.height / 2;
+            const startX = winRect.left + winRect.width / 2;
+            const send = (type, x, target) =>
+              target.dispatchEvent(new PointerEvent(type, { bubbles: true, pointerId: 1, button: 0, buttons: 1, clientX: x, clientY: y }));
+            send('pointerdown', startX, win);
+            for (let step = 1; step <= 5; step++) send('pointermove', startX - step * rect.width * 0.06, win);
+            send('pointerup', startX - rect.width * 0.3, win);
             return true;
           });
         }

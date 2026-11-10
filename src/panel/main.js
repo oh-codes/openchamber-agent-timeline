@@ -21,6 +21,9 @@ const STRINGS = {
     zoomOut: 'Zoom out',
     fit: 'Fit the whole timeline',
     zoomHint: 'Ctrl+wheel zooms, drag pans, double-click a bar zooms to it.',
+    fontSize: 'Text size',
+    fontHint: 'The host passes no interface size to extensions, so this is the panel’s own.',
+    mapHint: 'Drag the window, or click the strip to jump.',
     session: 'Session',
     lanes: (n) => `${n} lane${n === 1 ? '' : 's'}`,
     segments: (n) => `${n} segment${n === 1 ? '' : 's'}`,
@@ -56,6 +59,9 @@ const STRINGS = {
     zoomOut: 'Verkleinern',
     fit: 'Ganze Zeitachse zeigen',
     zoomHint: 'Strg+Mausrad zoomt, Ziehen verschiebt, Doppelklick auf einen Balken zoomt darauf.',
+    fontSize: 'Textgröße',
+    fontHint: 'Der Host übergibt Erweiterungen keine Interface-Größe, das hier ist die eigene.',
+    mapHint: 'Fenster ziehen oder in den Streifen klicken.',
     session: 'Session',
     lanes: (n) => `${n} Spur${n === 1 ? '' : 'en'}`,
     segments: (n) => `${n} Segment${n === 1 ? '' : 'e'}`,
@@ -97,6 +103,10 @@ const dom = {
   modes: byId('modes'),
   zoom: byId('zoom'),
   zoomFit: byId('zoom')?.querySelector('[data-zoom="fit"]') || null,
+  font: byId('font'),
+  map: byId('map'),
+  mapCanvas: byId('map-canvas'),
+  mapWin: byId('map-win'),
   count: byId('count'),
   axis: byId('axis'),
   lanes: byId('lanes'),
@@ -125,11 +135,14 @@ const state = {
   /** Visible slice of the timeline in scale fractions (0..1); [0,1] is the whole span. */
   view: { start: 0, end: 1 },
   scale: null,
+  /** Text scale on top of the host's root size (which carries no size setting). */
+  fontScale: 1,
   /** A pan just moved the view; the click that follows must not open a segment. */
   panEndedAt: 0,
 };
 
 const MIN_VIEW = 0.0008;
+const FONT_STEPS = [0.85, 1, 1.15, 1.3, 1.5];
 
 const t = () => STRINGS[state.lang] || STRINGS.en;
 
@@ -281,6 +294,58 @@ function resetView() {
 }
 
 const viewZoom = () => 1 / Math.max(MIN_VIEW, state.view.end - state.view.start);
+
+/* -------------------------------------------------------------------- map */
+
+/**
+ * The whole timeline as a density strip, the visible slice as a window.
+ * Without it a zoomed view gives no clue where inside the chat you are.
+ */
+function drawMap(scale, segments) {
+  const canvas = dom.mapCanvas;
+  if (!canvas) return;
+  const width = Math.max(1, Math.round(canvas.getBoundingClientRect().width));
+  const height = Math.max(1, Math.round(canvas.getBoundingClientRect().height));
+  const dpr = window.devicePixelRatio || 1;
+  if (canvas.width !== Math.round(width * dpr) || canvas.height !== Math.round(height * dpr)) {
+    canvas.width = Math.round(width * dpr);
+    canvas.height = Math.round(height * dpr);
+  }
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, width, height);
+
+  const buckets = Math.max(24, Math.min(400, Math.floor(width / 2)));
+  const counts = new Float32Array(buckets);
+  for (const segment of segments) {
+    const from = Math.max(0, Math.floor(scale.map(segment.start) * buckets));
+    const to = Math.min(buckets - 1, Math.floor(scale.map(segment.end) * buckets));
+    for (let i = from; i <= to; i++) counts[i] += 1;
+  }
+  let peak = 1;
+  for (const count of counts) if (count > peak) peak = count;
+
+  const tokens = getComputedStyle(document.documentElement);
+  ctx.fillStyle = (tokens.getPropertyValue('--oc-primary') || '#6c8cff').trim();
+  ctx.globalAlpha = 0.5;
+  const barWidth = width / buckets;
+  for (let i = 0; i < buckets; i++) {
+    if (!counts[i]) continue;
+    const barHeight = Math.max(1, (counts[i] / peak) * (height - 2));
+    ctx.fillRect(i * barWidth, height - barHeight - 1, Math.max(1, barWidth - 0.5), barHeight);
+  }
+  ctx.globalAlpha = 1;
+
+  const span = Math.max(MIN_VIEW, state.view.end - state.view.start);
+  if (span > 0.999) {
+    dom.mapWin.hidden = true;
+  } else {
+    dom.mapWin.hidden = false;
+    dom.mapWin.style.left = `${(state.view.start * 100).toFixed(3)}%`;
+    dom.mapWin.style.width = `${(span * 100).toFixed(3)}%`;
+  }
+}
 
 /* --------------------------------------------------------------- fetching */
 
@@ -499,15 +564,22 @@ function render() {
   // only recycles keyed nodes, so a leftover note would sit under the lanes.)
   for (const stray of dom.lanes.querySelectorAll('[data-note="state"]')) stray.remove();
   if (dom.count) {
-    dom.count.textContent = [
-      strings.lanes(visible.length),
-      narrow ? null : strings.segments(segments.length),
-      viewZoom() > 1.02 ? `${viewZoom().toFixed(1)}×` : null,
-    ].filter(Boolean).join(' · ');
+    dom.count.textContent = [strings.lanes(visible.length), narrow ? null : strings.segments(segments.length)]
+      .filter(Boolean)
+      .join(' · ');
   }
-  dom.lanes.classList.toggle('zoomed', viewZoom() > 1.02);
-  if (dom.zoomFit) dom.zoomFit.hidden = viewZoom() <= 1.02;
+  const zoom = viewZoom();
+  dom.lanes.classList.toggle('zoomed', zoom > 1.02);
+  if (dom.zoomFit) {
+    // The zoom factor belongs on the button that undoes it, not in the counter
+    // (where it was the first thing to get truncated in a narrow rail).
+    dom.zoomFit.hidden = zoom <= 1.02;
+    dom.zoomFit.textContent = `fit ${zoom.toFixed(1)}×`;
+  }
   if (dom.zoom) dom.zoom.title = strings.zoomHint;
+
+  const rowHeight = Math.round(ROW_H * state.fontScale);
+  const barHeight = Math.max(6, Math.round(BAR_H * state.fontScale));
 
   syncChildren(
     dom.lanes,
@@ -538,7 +610,7 @@ function render() {
       row.label.innerHTML = `${group.depth ? `<span class="depth">${'·'.repeat(Math.min(group.depth, 4))} </span>` : ''}${esc(group.agent)}${group.sessions.length > 1 ? `<span class="nb">×${group.sessions.length}</span>` : ''}`;
 
       const track = row.track;
-      track.style.height = `${rows.length * ROW_H + 2}px`;
+      track.style.height = `${rows.length * rowHeight + 2}px`;
 
       const cutsKey = cuts.map((cut) => cut.at.toFixed(3)).join(',');
       if (row.cutsKey !== cutsKey) {
@@ -591,12 +663,12 @@ function render() {
         (bar, barKey) => {
           const { segment, rowIndex, left, right } = geometry.get(barKey);
           // Thinking is the backdrop to the work: a slimmer bar than a tool call.
-          const height = segment.kind === 'reasoning' ? Math.max(4, Math.round(BAR_H * 0.6)) : BAR_H;
+          const height = segment.kind === 'reasoning' ? Math.max(4, Math.round(barHeight * 0.6)) : barHeight;
           const className = `seg ${segment.kind}${segment.status ? ` ${segment.status}` : ''}${state.selected === barKey ? ' sel' : ''}`;
           if (bar.className !== className) bar.className = className;
           bar.style.left = `${left.toFixed(3)}%`;
           bar.style.width = `${Math.max(right - left, 0.12).toFixed(3)}%`;
-          bar.style.top = `${rowIndex * ROW_H + 1 + Math.round((BAR_H - height) / 2)}px`;
+          bar.style.top = `${rowIndex * rowHeight + 1 + Math.round((barHeight - height) / 2)}px`;
           bar.style.height = `${height}px`;
           bar.title = `${segment.name} · ${fmtDur(segment.end - segment.start)}${segment.preview ? `\n${segment.preview}` : ''}`;
         },
@@ -627,6 +699,10 @@ function render() {
   } else {
     dom.lanes.querySelector('[data-note="partial"]')?.remove();
   }
+
+  dom.map.hidden = false;
+  dom.map.title = strings.mapHint;
+  drawMap(scale, segments);
 }
 
 const segmentKey = (segment) => `${segment.lane}|${segment.messageId}|${segment.index}`;
@@ -673,6 +749,7 @@ function note(text, isError = false) {
 function showNote(text, isError = false) {
   dom.axis.replaceChildren();
   dom.lanes.replaceChildren();
+  dom.map.hidden = true;
   const marker = note(text, isError);
   marker.dataset.note = 'state';
   dom.lanes.append(marker);
@@ -858,13 +935,93 @@ dom.lanes.addEventListener('pointerdown', (event) => {
   window.addEventListener('pointercancel', endPan);
 });
 
+/* ------------------------------------------------------------- overview */
+
+let mapDrag = null;
+let mapFrame = 0;
+
+function mapFraction(clientX) {
+  const rect = dom.map.getBoundingClientRect();
+  return clamp01((clientX - rect.left) / Math.max(1, rect.width));
+}
+
+function onMapMove(event) {
+  if (!mapDrag) return;
+  const fraction = mapFraction(event.clientX);
+  const from = Math.min(Math.max(0, fraction - mapDrag.grab), 1 - mapDrag.span);
+  state.view = { start: from, end: from + mapDrag.span };
+  if (mapFrame) return;
+  mapFrame = requestAnimationFrame(() => {
+    mapFrame = 0;
+    render();
+  });
+}
+
+function endMapDrag() {
+  mapDrag = null;
+  dom.map.classList.remove('dragging');
+  window.removeEventListener('pointermove', onMapMove);
+  window.removeEventListener('pointerup', endMapDrag);
+  window.removeEventListener('pointercancel', endMapDrag);
+}
+
+dom.map?.addEventListener('pointerdown', (event) => {
+  if (event.button !== 0) return;
+  const fraction = mapFraction(event.clientX);
+  const span = Math.max(MIN_VIEW, state.view.end - state.view.start);
+  const inside = span <= 0.999 && fraction >= state.view.start && fraction <= state.view.end;
+  if (!inside) {
+    // Click beside the window: centre it there instead of nudging.
+    const from = Math.min(Math.max(0, fraction - span / 2), 1 - span);
+    state.view = { start: from, end: from + span };
+    render();
+  }
+  mapDrag = { grab: fraction - state.view.start, span };
+  dom.map.classList.add('dragging');
+  window.addEventListener('pointermove', onMapMove);
+  window.addEventListener('pointerup', endMapDrag);
+  window.addEventListener('pointercancel', endMapDrag);
+});
+
+/* ----------------------------------------------------------- text scale */
+
+function applyFontScale(scale, persist = true) {
+  state.fontScale = scale;
+  document.body.style.setProperty('--fs-scale', String(scale));
+  if (dom.font) {
+    dom.font.textContent = `Aa ${Math.round(scale * 100)}%`;
+    dom.font.title = `${t().fontSize} — ${t().fontHint}`;
+  }
+  if (persist) host.storage?.set?.('fontScale', scale)?.catch?.(() => {});
+  render();
+}
+
+async function restoreFontScale() {
+  try {
+    const stored = await host.storage.get('fontScale');
+    if (typeof stored === 'number' && stored >= 0.5 && stored <= 2.5) {
+      applyFontScale(stored, false);
+      return;
+    }
+  } catch {
+    /* no storage scope: keep the default */
+  }
+  applyFontScale(state.fontScale, false);
+}
+
 host.onReady((context) => {
   applyHostReady(context, document.documentElement);
   state.lang = String(context.locale || '').toLowerCase().startsWith('de') ? 'de' : 'en';
   setSession(context.session);
+  restoreFontScale();
 });
 
 host.onSession((session) => setSession(session));
+
+dom.font?.addEventListener('click', () => {
+  const index = FONT_STEPS.indexOf(state.fontScale);
+  applyFontScale(FONT_STEPS[(index + 1) % FONT_STEPS.length] ?? 1);
+});
 
 window.addEventListener('keydown', (event) => {
   if (event.key === 'Escape' && !dom.drawer.hidden) closeDrawer();

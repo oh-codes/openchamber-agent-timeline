@@ -23,6 +23,8 @@ Eine Ordner-Installation liest direkt aus diesem Ordner: nach `npm run build` un
 | **aktiv** | Pausen über 15 s werden gestaucht, die Arbeit füllt die Breite. |
 | **Uhrzeit** | lineare Zeitachse. |
 | **Zoom** | `+` / `−` in der Leiste, Strg+Mausrad zoomt unter dem Zeiger, Ziehen verschiebt den Ausschnitt, Doppelklick auf einen Balken zoomt genau darauf. `fit` (oder Taste `0`) zeigt wieder die ganze Zeitleiste. |
+| **Streifen** | unter den Spuren liegt die ganze Session als Dichte-Streifen; das eingerahmte Fenster ist der sichtbare Ausschnitt. Fenster ziehen oder daneben klicken zum Springen. |
+| **Aa** | Textgröße in fünf Stufen (85–150 %), wird gespeichert. |
 | Klick | öffnet unten die Details: Agent, Session, Modell, Tokens, Dauer, Eingabe/Ausgabe. |
 | `Esc` | schließt die Details. |
 | ↻ | lädt neu, ohne den Dienst-Cache zu benutzen. |
@@ -43,6 +45,10 @@ Zwei Sonderfälle löst der Dienst (`service/main.js`):
 - Je Spur werden die letzten **120 Nachrichten** geladen (OpenCode erlaubt maximal 200 pro Anfrage). Ältere Turns fehlen; das Panel sagt es unten.
 - Maximal **24 Spuren**, **4 Ebenen** tief.
 - Der Dienst darf nur lesen: Sessions, Nachrichten, Projekte, Events. Alles andere beantwortet der Host mit `403 NOT_A_LISTED_READ`.
+
+### Schriftgröße
+
+Der Host übergibt Erweiterungen nur die Schrift*familie* (`--oc-font`), keine Größe: `applyHostTheme` im SDK setzt die Wurzel fest auf `0.875rem`, und die Einstellung „Interface-Größe" der App erreicht das iframe nicht (es ist sandboxed). Deshalb rechnet das Panel alles in `em` über dieser Wurzel und bringt mit **Aa** einen eigenen Faktor mit, der über `host.storage` gespeichert wird.
 
 ## Entwicklung
 
