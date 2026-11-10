@@ -241,6 +241,25 @@
             return true;
           });
         }
+        if (params.has('clicksliver')) {
+          // Click 2 px beside the narrowest bar: the resolver should still pick it.
+          waitForBars((frame) => {
+            const doc = frame.contentDocument;
+            const track = doc?.querySelector('.track');
+            if (!track) return false;
+            const trackRect = track.getBoundingClientRect();
+            const bars = [...track.querySelectorAll('.seg')].filter(
+              (bar) => bar.getBoundingClientRect().left > trackRect.left + 40,
+            );
+            if (bars.length < 5) return false;
+            const sliver = bars.sort((a, b) => a.getBoundingClientRect().width - b.getBoundingClientRect().width)[0];
+            const rect = sliver.getBoundingClientRect();
+            const x = rect.right + 2;
+            const y = rect.top + rect.height / 2;
+            (doc.elementFromPoint(x, y) || track).dispatchEvent(new MouseEvent('click', { bubbles: true, clientX: x, clientY: y }));
+            return true;
+          });
+        }
         if (params.has('clickw')) {
           waitForBars((frame) => {
             const doc = frame.contentDocument;

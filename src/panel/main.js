@@ -153,7 +153,6 @@ const state = {
   seq: 0,
   timer: null,
   detailSeq: 0,
-  byKey: new Map(),
   laneInfo: new Map(),
   /** Visible slice of the timeline in scale fractions (0..1); [0,1] is the whole span. */
   view: { start: 0, end: 1 },
@@ -627,7 +626,6 @@ function render() {
     .map((cut) => ({ ...cut, at: pct(cut.at) }))
     .filter((cut) => cut.at >= -0.5 && cut.at <= 100.5);
 
-  state.byKey = new Map();
   state.laneInfo = new Map();
   const byLane = new Map();
   for (const lane of lanes) state.laneInfo.set(lane.id, lane);
@@ -654,7 +652,6 @@ function render() {
   }
 
   for (const segment of segments) {
-    state.byKey.set(segmentKey(segment), segment);
     const group = groupOfLane.get(segment.lane);
     if (!group) continue;
     if (!byLane.has(group.key)) byLane.set(group.key, []);
@@ -691,6 +688,20 @@ function render() {
       name.className = 'name';
       const track = document.createElement('div');
       track.className = 'track';
+      track.addEventListener('click', (event) => {
+        // A pan ends with a click; that one must not open a segment.
+        if (performance.now() - state.panEndedAt < 300) return;
+        const hit = nearestBar(track, event);
+        if (!hit) return;
+        select(hit.segment, track.querySelector(`[data-key="${CSS.escape(hit.key)}"]`));
+      });
+      track.addEventListener('dblclick', (event) => {
+        const hit = nearestBar(track, event);
+        if (!hit) return;
+        event.preventDefault();
+        zoomToSegment(hit.segment);
+        render();
+      });
       row.append(name, track);
       row.name = name;
       row.track = track;
@@ -740,25 +751,21 @@ function render() {
         }
       });
 
+      // Hit targets for the nearest-click resolver: a 2 px tick cannot be hit
+      // reliably, so the click is matched by distance in the track instead.
+      track._bars = [...geometry.entries()].map(([barKey, entry]) => ({
+        key: barKey,
+        segment: entry.segment,
+        left: entry.left,
+        right: entry.right,
+      }));
+
       syncChildren(
         track,
         order,
         (barKey) => {
           const bar = document.createElement('div');
           bar.className = 'seg';
-          bar.addEventListener('click', () => {
-            // A pan ends with a click on whatever was under the pointer.
-            if (performance.now() - state.panEndedAt < 300) return;
-            const segment = state.byKey.get(barKey);
-            if (segment) select(segment, bar);
-          });
-          bar.addEventListener('dblclick', (event) => {
-            event.preventDefault();
-            const segment = state.byKey.get(barKey);
-            if (!segment) return;
-            zoomToSegment(segment);
-            render();
-          });
           return bar;
         },
         (bar, barKey) => {
@@ -816,6 +823,29 @@ function render() {
 }
 
 const segmentKey = (segment) => `${segment.lane}|${segment.messageId}|${segment.index}`;
+
+/**
+ * The segment a click in this track means.
+ *
+ * Bars can be a couple of pixels wide (a prompt has no duration, a text part
+ * 40 ms), and widening them would make neighbours overlap. So the click is
+ * resolved by distance instead: the bar under the pointer, or the nearest one
+ * within a few pixels.
+ */
+function nearestBar(track, event) {
+  const bars = track._bars || [];
+  const rect = track.getBoundingClientRect();
+  if (!bars.length || !rect.width) return null;
+  const x = ((event.clientX - rect.left) / rect.width) * 100;
+  const tolerance = (7 / rect.width) * 100;
+  let best = null;
+  for (const bar of bars) {
+    const distance = x < bar.left ? bar.left - x : x > bar.right ? x - bar.right : 0;
+    if (distance > tolerance) continue;
+    if (!best || distance < best.distance) best = { ...bar, distance };
+  }
+  return best;
+}
 
 /** Pixel width of a track: the axis must not put labels closer than they can read. */
 function trackWidth() {
@@ -1174,6 +1204,7 @@ window.addEventListener('resize', () => {
 });
 
 render();
+
 
 
 

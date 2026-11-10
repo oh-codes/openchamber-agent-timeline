@@ -1956,7 +1956,6 @@ ${GUEST_UI_LOOK_CSS}`;
     seq: 0,
     timer: null,
     detailSeq: 0,
-    byKey: /* @__PURE__ */ new Map(),
     laneInfo: /* @__PURE__ */ new Map(),
     /** Visible slice of the timeline in scale fractions (0..1); [0,1] is the whole span. */
     view: { start: 0, end: 1 },
@@ -2319,7 +2318,6 @@ ${GUEST_UI_LOOK_CSS}`;
       }
     );
     const cuts = scale.cuts.map((cut) => ({ ...cut, at: pct(cut.at) })).filter((cut) => cut.at >= -0.5 && cut.at <= 100.5);
-    state.byKey = /* @__PURE__ */ new Map();
     state.laneInfo = /* @__PURE__ */ new Map();
     const byLane = /* @__PURE__ */ new Map();
     for (const lane of lanes) state.laneInfo.set(lane.id, lane);
@@ -2339,7 +2337,6 @@ ${GUEST_UI_LOOK_CSS}`;
       groupOfLane.set(lane.id, group);
     }
     for (const segment of segments) {
-      state.byKey.set(segmentKey(segment), segment);
       const group = groupOfLane.get(segment.lane);
       if (!group) continue;
       if (!byLane.has(group.key)) byLane.set(group.key, []);
@@ -2367,6 +2364,19 @@ ${GUEST_UI_LOOK_CSS}`;
         name.className = "name";
         const track = document.createElement("div");
         track.className = "track";
+        track.addEventListener("click", (event) => {
+          if (performance.now() - state.panEndedAt < 300) return;
+          const hit = nearestBar(track, event);
+          if (!hit) return;
+          select(hit.segment, track.querySelector(`[data-key="${CSS.escape(hit.key)}"]`));
+        });
+        track.addEventListener("dblclick", (event) => {
+          const hit = nearestBar(track, event);
+          if (!hit) return;
+          event.preventDefault();
+          zoomToSegment(hit.segment);
+          render();
+        });
         row.append(name, track);
         row.name = name;
         row.track = track;
@@ -2410,24 +2420,18 @@ ${GUEST_UI_LOOK_CSS}`;
             geometry.set(key2, { segment, rowIndex, left: Math.max(0, from), right: Math.min(100, to) });
           }
         });
+        track._bars = [...geometry.entries()].map(([barKey, entry]) => ({
+          key: barKey,
+          segment: entry.segment,
+          left: entry.left,
+          right: entry.right
+        }));
         syncChildren(
           track,
           order,
           (barKey) => {
             const bar = document.createElement("div");
             bar.className = "seg";
-            bar.addEventListener("click", () => {
-              if (performance.now() - state.panEndedAt < 300) return;
-              const segment = state.byKey.get(barKey);
-              if (segment) select(segment, bar);
-            });
-            bar.addEventListener("dblclick", (event) => {
-              event.preventDefault();
-              const segment = state.byKey.get(barKey);
-              if (!segment) return;
-              zoomToSegment(segment);
-              render();
-            });
             return bar;
           },
           (bar, barKey) => {
@@ -2476,6 +2480,20 @@ ${GUEST_UI_LOOK_CSS}`;
     drawMap(scale, segments);
   }
   var segmentKey = (segment) => `${segment.lane}|${segment.messageId}|${segment.index}`;
+  function nearestBar(track, event) {
+    const bars = track._bars || [];
+    const rect = track.getBoundingClientRect();
+    if (!bars.length || !rect.width) return null;
+    const x = (event.clientX - rect.left) / rect.width * 100;
+    const tolerance = 7 / rect.width * 100;
+    let best = null;
+    for (const bar of bars) {
+      const distance = x < bar.left ? bar.left - x : x > bar.right ? x - bar.right : 0;
+      if (distance > tolerance) continue;
+      if (!best || distance < best.distance) best = { ...bar, distance };
+    }
+    return best;
+  }
   function trackWidth() {
     const track = dom.lanes.querySelector(".track");
     if (track && track.clientWidth) return track.clientWidth;
