@@ -56,8 +56,8 @@ works out in `service/main.js`:
 - **handovers are clipped**: OpenCode emits the next tool call 0.3–4 s before it
   closes the previous part, which would otherwise claim two things ran at once;
 - **running tools** end at "now", so the bar grows;
-- **compaction** is a message with a single timestamp, so it is drawn as a
-  marker rather than a span.
+- **any part in flight** does too: OpenCode writes a part with only `time.created` and closes it later, so the bar grows instead of sitting as a sliver until the model finishes. A running compaction is a growing band for the same reason;
+- **compaction** is a message with a single timestamp, so a finished one is drawn as a marker rather than a span.
 
 ## Limits
 

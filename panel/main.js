@@ -2501,7 +2501,11 @@ ${GUEST_UI_LOOK_CSS}`;
         const group = byGroupKey.get(key);
         const laneRaw = byLane.get(key) || [];
         const compactions = laneRaw.filter((segment) => segment.kind === "compaction");
-        const laneSegments = groupTools(laneRaw.filter((segment) => segment.kind !== "compaction"));
+        const runningCompactions = compactions.filter((segment) => segment.status === "running");
+        const laneSegments = groupTools([
+          ...laneRaw.filter((segment) => segment.kind !== "compaction"),
+          ...runningCompactions
+        ]);
         const rows = packRows(laneSegments);
         row.className = group.depth === 0 ? "lane root" : "lane";
         row.title = [
@@ -2561,15 +2565,16 @@ ${GUEST_UI_LOOK_CSS}`;
             bar.style.height = `${height}px`;
             const waitNote = segment.wait === "subagent" ? `${strings.waitSubagent} ${segment.waitLabel || ""}`.trim() : segment.wait === "user" ? strings.waitUser : "";
             const countNote = segment.items?.length > 1 ? strings.toolRun(segment.items.length) : "";
+            const label = segment.kind === "compaction" ? strings.compaction : segment.name;
             bar.title = [
-              countNote || `${segment.name} \xB7 ${fmtDur(segment.end - segment.start)}`,
+              countNote || `${label} \xB7 ${fmtDur(segment.end - segment.start)}${segment.kind === "compaction" ? ` \xB7 ${segment.status || ""}` : ""}`.trim(),
               countNote ? fmtDur(segment.end - segment.start) : "",
               waitNote,
               countNote ? segment.items.map((item) => item.name).slice(0, 8).join(", ") : segment.preview
             ].filter(Boolean).join("\n");
           }
         );
-        const visibleCompactions = compactions.map((segment) => ({ segment, at: pct(segment.start) })).filter((entry) => entry.at >= -1 && entry.at <= 101);
+        const visibleCompactions = compactions.filter((segment) => segment.status !== "running").map((segment) => ({ segment, at: pct(segment.start) })).filter((entry) => entry.at >= -1 && entry.at <= 101);
         row.marks._map = new Map(visibleCompactions.map((entry) => [entry.segment.messageId, entry.segment]));
         syncChildren(
           row.marks,

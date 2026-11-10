@@ -853,9 +853,14 @@ function render() {
     (row, key) => {
       const group = byGroupKey.get(key);
       const laneRaw = byLane.get(key) || [];
-      // Compactions are point events: markers, not bars.
+      // A finished compaction is a point event (marker); a running one blocks the
+      // session and gets a growing bar, so you can see it compacting.
       const compactions = laneRaw.filter((segment) => segment.kind === 'compaction');
-      const laneSegments = groupTools(laneRaw.filter((segment) => segment.kind !== 'compaction'));
+      const runningCompactions = compactions.filter((segment) => segment.status === 'running');
+      const laneSegments = groupTools([
+        ...laneRaw.filter((segment) => segment.kind !== 'compaction'),
+        ...runningCompactions,
+      ]);
       const rows = packRows(laneSegments);
 
       row.className = group.depth === 0 ? 'lane root' : 'lane';
@@ -929,8 +934,9 @@ function render() {
               ? strings.waitUser
               : '';
           const countNote = segment.items?.length > 1 ? strings.toolRun(segment.items.length) : '';
+          const label = segment.kind === 'compaction' ? strings.compaction : segment.name;
           bar.title = [
-            countNote || `${segment.name} · ${fmtDur(segment.end - segment.start)}`,
+            countNote || `${label} · ${fmtDur(segment.end - segment.start)}${segment.kind === 'compaction' ? ` · ${segment.status || ''}` : ''}`.trim(),
             countNote ? fmtDur(segment.end - segment.start) : '',
             waitNote,
             countNote ? segment.items.map((item) => item.name).slice(0, 8).join(', ') : segment.preview,
@@ -940,6 +946,7 @@ function render() {
 
       // Compaction markers: a dashed line at the moment the summary ran.
       const visibleCompactions = compactions
+        .filter((segment) => segment.status !== 'running')
         .map((segment) => ({ segment, at: pct(segment.start) }))
         .filter((entry) => entry.at >= -1 && entry.at <= 101);
       row.marks._map = new Map(visibleCompactions.map((entry) => [entry.segment.messageId, entry.segment]));

@@ -141,12 +141,16 @@ function segmentsOfMessage(laneId, message) {
    */
   if (message.type === 'compaction') {
     if (messageStart == null) return [];
+    // While it runs, the compaction blocks the session and has no end timestamp:
+    // draw it as a growing band instead of a point.
+    const running = message.status === 'running';
     return [{
       lane: laneId,
       kind: 'compaction',
       name: 'compaction',
       start: messageStart,
-      end: messageStart,
+      end: running ? Date.now() : messageStart,
+      running,
       status: message.status || null,
       reason: message.reason || null,
       tokens: message.tokens ? { input: message.tokens.input, output: message.tokens.output, cacheRead: message.tokens.cache?.read } : null,
@@ -161,13 +165,24 @@ function segmentsOfMessage(laneId, message) {
     const part = parts[i];
     const kind = segmentKind(part);
     if (kind === 'other') continue;
-    const running = part.type === 'tool' && part.state?.status === 'running';
+    const toolState = part.state?.status;
+    const started = num(part.time?.created) ?? num(part.time?.ran);
+    const finished = num(part.time?.completed) ?? (kind === 'tool' ? num(part.time?.ran) : null);
+    /*
+     * The message record exists before its parts are written: during prefill the
+     * API returns `content: null`, then parts appear with only `time.created`.
+     * An unfinished part inside an unfinished message is in flight, so its bar
+     * has to grow to "now" instead of sitting as a 40 ms sliver until the model
+     * closes it — that sliver was the black gap in the timeline.
+     */
+    const inFlight = finished == null && started != null && messageEnd == null;
+    const running = inFlight || (kind === 'tool' && (toolState === 'running' || toolState === 'streaming'));
     rows.push({
       lane: laneId,
       kind,
       name: kind === 'tool' ? part.name || 'tool' : kind,
-      start: num(part.time?.created) ?? num(part.time?.ran),
-      end: running ? Date.now() : num(part.time?.completed) ?? (kind === 'tool' ? num(part.time?.ran) : null),
+      start: started,
+      end: running ? Date.now() : finished,
       running,
       status: part.type === 'tool' ? part.state?.status || null : null,
       ...waitOf(part),
@@ -194,7 +209,8 @@ function segmentsOfMessage(laneId, message) {
       let next = null;
       for (let j = i + 1; j < rows.length && next == null; j++) next = rows[j].start ?? rows[j].end;
       if (next != null && next > row.start) row.end = ceiling != null ? Math.min(next, ceiling) : next;
-      else row.end = ceiling ?? row.start;
+      // An unfinished message with an untimed part (text) is still streaming.
+      else row.end = ceiling ?? (messageEnd == null ? Date.now() : row.start);
     }
     if (row.end <= row.start) row.end = row.start + 40;
     if (row.running) row.end = Math.max(row.end, row.start + 40);
